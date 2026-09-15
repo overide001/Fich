@@ -2,6 +2,8 @@
 
 class Game{
   constructor(){
+    window.game=this;
+    this.quitController = new QuitController(this);
     this.canvas=document.getElementById('game');
     this.input=new Input();
     this.profile=new Profile();
@@ -106,6 +108,20 @@ class Game{
     if(name==='start')this.el.start.classList.add('on');
     if(name==='shop')this.el.shop.classList.add('on');
     if(name==='over')this.el.over.classList.add('on');
+  }
+
+  quitToMenu(){
+    const earned=this.eco.pendingCoins||0;
+    if(earned>0){
+      this.profile.addCoins(earned);
+      this.showToast(`COINS SAVED · +${earned}`);
+    }
+    this.eco.pendingCoins=0;
+    this.running=false;
+    this.showScreen('start');
+    this.el.banner.style.opacity='0';
+    this.bannerTimer=0;
+    this.refreshStartCoins();
   }
 
   showStart(){
