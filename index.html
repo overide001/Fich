@@ -1,0 +1,91 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PREDATION</title>
+<!-- interface-design.css - visual design and layout styling -->
+<link rel="stylesheet" href="css/interface-design.css">
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="1600" height="900"></canvas></div>
+<div id="scan"></div><div id="vig"></div>
+
+<div id="hud">
+  <div>SIZE <span id="hSize">8.0</span> &nbsp; <span class="lineName" id="hLine">—</span> &nbsp; STAGE <span id="hStage">1</span> · <span id="hName">FRY</span></div>
+  <div>EATEN <span id="hKills">0</span> &nbsp; RUN COINS <span id="hRunCoins">0</span></div>
+  <div>ENERGY <span class="bar"><div id="hEnergy" style="width:100%"></div></span></div>
+  <div>STAMINA <span class="bar"><div id="hStam" style="width:100%"></div></span></div>
+</div>
+
+<div id="stats">
+  <div class="coins">◆ <span id="sCoins">0</span></div>
+  <div>FISH <span id="sFish">0</span></div>
+  <div>FOOD <span id="sFood">0</span></div>
+  <div>TIME <span id="sTime">0</span></div>
+</div>
+
+<div id="hint">WASD · ARROWS · HUNT SMALLER · FLEE LARGER</div>
+<div id="banner"><span id="bText">EVOLVED</span><small id="bSub">STAGE 2</small></div>
+<div id="toast"></div>
+
+<!-- START -->
+<div class="screen on" id="start">
+  <h1>PREDATION</h1>
+  <div class="subtitle">RANDOM LINEAGE · EVERY RUN</div>
+  <div class="coinBanner">◆ <span id="startCoins">0</span> COINS</div>
+  <div class="menuRow">
+    <button class="primary" id="startBtn">START</button>
+    <button id="openShop">SHOP</button>
+  </div>
+  <div class="help">PRESS <b>ENTER</b> OR <b>SPACE</b> TO PLAY · <b>S</b> FOR SHOP</div>
+  <div class="tips">
+    You are the amber fish. Everything else is black &amp; white.<br>
+    Eat smaller. Flee larger. Grow. Evolve. Die anyway.
+  </div>
+</div>
+
+<!-- SHOP -->
+<div class="screen" id="shop">
+  <div class="shopHead">
+    <h1>SHOP</h1>
+    <div class="coins">◆ <span id="shopCoins">0</span></div>
+  </div>
+  <div class="tabs">
+    <button data-tab="skins" class="active">SKINS</button>
+    <button data-tab="upgrades">UPGRADES</button>
+  </div>
+  <div class="grid" id="shopGrid"></div>
+  <button class="backBtn" id="closeShop">BACK · ESC</button>
+</div>
+
+<!-- GAME OVER -->
+<div class="screen" id="over">
+  <h1>GAME OVER</h1>
+  <p id="oWho">You were eaten.</p>
+  <p>Survived <span id="oTime">0</span>s · Ate <span id="oKills">0</span> · Stage <span id="oStage">1</span> · Size <span id="oSize">0</span></p>
+  <div class="reward">◆ +<span id="oCoins">0</span> COINS EARNED</div>
+  <div class="bestStats" id="oBest"></div>
+  <div class="buttons">
+    <button class="primary" id="restartBtn">PLAY AGAIN</button>
+    <button id="shopFromOver">SHOP</button>
+  </div>
+</div>
+
+<!-- player-profile-storage.js - saved coins, skins, upgrades, and run statistics -->
+<script src="js/player-profile-storage.js"></script>
+<!-- shop-catalog.js - shop skins and upgrade definitions -->
+<script src="js/shop-catalog.js"></script>
+<!-- keyboard-controls.js - keyboard controls and movement direction -->
+<script src="js/keyboard-controls.js"></script>
+<!-- game-world-config.js - shared constants, lineages, and fish shape data -->
+<script src="js/game-world-config.js"></script>
+<!-- fish-behavior.js - individual fish movement, AI, eating, and evolution -->
+<script src="js/fish-behavior.js"></script>
+<!-- ecosystem-simulation.js - ecosystem spawning, collisions, food, and particles -->
+<script src="js/ecosystem-simulation.js"></script>
+<!-- canvas-renderer.js - canvas drawing and visual effects -->
+<script src="js/canvas-renderer.js"></script>
+<!-- game-controller.js - screens, shop actions, game loop, and HUD updates -->
+<script src="js/game-controller.js"></script>
+</body>
+</html>
