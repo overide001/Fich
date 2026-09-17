@@ -1,4 +1,20 @@
-﻿"use strict";
+﻿
+"use strict";
+
+/* ================================================================
+   RENDERER  —  heavy rework
+   ----------------------------------------------------------------
+   External contract kept intact:
+     new Renderer(canvas, eco)
+     renderer.fit()
+     renderer.render()
+   Consumed fish API unchanged:
+     renderSpine() profileKey() colorKey() accentKey()
+     dorsalKey() shapeKey() defSize() predict() aggression()
+     pos vel angle size state target alive isPlayer spawnTimer
+     swimPhase blinkAnim evolveAnim glitchPhase lurePhase
+     lineage.lure skin visionRange energy maxEnergy
+   ================================================================ */
 
 class Renderer{
   constructor(canvas,eco){
@@ -14,15 +30,20 @@ class Renderer{
     this._fpsFrames=0;
     this._lastTime=(typeof performance!=='undefined'?performance.now():Date.now());
     this._dt=1/60;
+    this._time=this._lastTime*0.001;
 
     /* ---------- sorted fish cache ---------- */
     this._sortedFish=null;
     this._lastFishCount=-1;
     this._sortFrame=0;
 
-    /* ---------- reusable geometry buffers ---------- */
-    this._top=[];
-    this._bot=[];
+    /* ---------- grow-only geometry buffers (flat numeric arrays) ---------- */
+    this._cx=[];  this._cy=[];    /* centreline            */
+    this._nx=[];  this._ny=[];    /* unit normals          */
+    this._hw=[];  this._sw=[];    /* half widths + scratch */
+    this._tx=[];  this._ty=[];    /* dorsal outline        */
+    this._bx=[];  this._by=[];    /* ventral outline       */
+    this._minX=0; this._maxX=0; this._minY=0; this._maxY=0;
 
     /* ---------- pre-rendered background ---------- */
     this._bg=null;
@@ -37,13 +58,16 @@ class Renderer{
     /* ---------- intent line scratch ---------- */
     this._intentPool=[];
 
-    /* ---------- last known canvas CSS size, to skip redundant fit() ---------- */
+    /* ---------- last known canvas CSS size ---------- */
     this._lastFitW=0;
     this._lastFitH=0;
+
+    this.camera={x:CFG.W*0.5,y:CFG.H*0.5,zoom:1};
+    this._view={left:0,right:CFG.VIEW_W,top:0,bottom:CFG.VIEW_H};
   }
 
   /* ============================================================
-     AMBIENT MOTES  (underwater haze particles)
+     AMBIENT MOTES
      ============================================================ */
   _seedAmbient(n){
     this._ambient.length=0;
@@ -56,18 +80,17 @@ class Renderer{
         vy:(Math.random()-0.5)*6-2,
         r:0.4+Math.random()*1.4,
         a:0.03+Math.random()*0.09,
-        phase:Math.random()*Math.PI*2,
-        depth:0.35+Math.random()*0.65
+        phase:Math.random()*Math.PI*2
       });
     }
   }
 
   /* ============================================================
-     FIT  —  CSS-only scale, logical resolution unchanged
+     FIT — CSS-only scale, logical resolution unchanged
      ============================================================ */
   fit(){
-    const s=Math.min(window.innerWidth/CFG.W,window.innerHeight/CFG.H)*0.98;
-    const w=(CFG.W*s)|0,h=(CFG.H*s)|0;
+    const s=Math.min(window.innerWidth/CFG.VIEW_W,window.innerHeight/CFG.VIEW_H)*0.98;
+    const w=(CFG.VIEW_W*s)|0,h=(CFG.VIEW_H*s)|0;
     if(w===this._lastFitW&&h===this._lastFitH)return;
     this._lastFitW=w;this._lastFitH=h;
     this.canvas.style.width=w+'px';
@@ -82,6 +105,7 @@ class Renderer{
     const dt=(now-this._lastTime)/1000;
     this._lastTime=now;
     this._dt=(dt>0&&dt<0.5)?dt:1/60;
+    this._time=now*0.001;
 
     this._fpsAccum+=this._dt;
     this._fpsFrames++;
@@ -106,10 +130,10 @@ class Renderer{
   }
 
   /* ============================================================
-     BACKGROUND  —  cached to offscreen canvas
+     BACKGROUND — cached to offscreen canvas
      ============================================================ */
   _buildBackground(){
-    const W=CFG.W,H=CFG.H;
+    const W=CFG.VIEW_W,H=CFG.VIEW_H;
     if(this._bg&&this._bgW===W&&this._bgH===H)return;
 
     const c=document.createElement('canvas');
@@ -159,15 +183,24 @@ class Renderer{
 
     const ctx=this.ctx;
     const eco=this.eco;
+    if(!eco)return;
+    this._updateCamera(eco.player);
 
     /* hard reset state every frame — fixes leakage bugs */
     ctx.globalAlpha=1;
     ctx.globalCompositeOperation='source-over';
     ctx.setLineDash([]);
     ctx.setTransform(1,0,0,1,0,0);
+    ctx.lineJoin='round';
+    ctx.lineCap='round';
 
     /* 1. background */
     ctx.drawImage(this._bg,0,0);
+
+    ctx.save();
+    ctx.translate(CFG.VIEW_W*0.5-this.camera.x*this.camera.zoom,
+                  CFG.VIEW_H*0.5-this.camera.y*this.camera.zoom);
+    ctx.scale(this.camera.zoom,this.camera.zoom);
 
     /* 2. ambient environment */
     this._drawAmbient(ctx);
@@ -185,14 +218,14 @@ class Renderer{
     if(this.quality>0){
       for(let i=0;i<list.length;i++){
         const f=list[i];
-        if(!f.alive)continue;
+        if(!f.alive||!this._visible(f.pos,f.size*4))continue;
         this.drawFishShadow(ctx,f,player);
       }
     }
 
     for(let i=0;i<list.length;i++){
       const f=list[i];
-      if(!f.alive)continue;
+      if(!f.alive||!this._visible(f.pos,f.size*4))continue;
       this.drawFish(ctx,f);
     }
 
@@ -200,11 +233,14 @@ class Renderer{
     this.drawShockwaves(ctx);
     this.drawParticles(ctx);
     this.drawCoinPops(ctx);
+    ctx.restore();
+
+    this.drawOtherPlayerPointers(player);
 
     /* 7. screen flicker */
     if(eco.flicker>0){
       ctx.fillStyle='rgba(255,255,255,'+(eco.flickerStrength*0.5)+')';
-      ctx.fillRect(0,0,CFG.W,CFG.H);
+      ctx.fillRect(0,0,CFG.VIEW_W,CFG.VIEW_H);
     }
 
     /* final state reset */
@@ -213,10 +249,63 @@ class Renderer{
     ctx.setLineDash([]);
   }
 
+  drawOtherPlayerPointers(player){
+    if(!player||!player.pos||!this.eco||!this.eco.fish)return;
+    const ctx=this.ctx;
+    const cx=CFG.VIEW_W*0.5,cy=CFG.VIEW_H*0.5;
+    const halfW=CFG.VIEW_W*0.5-30,halfH=CFG.VIEW_H*0.5-30;
+    const pulse=0.82+Math.sin(this._time*5)*0.18;
+    const zoom=this.camera.zoom;
+
+    for(const fish of this.eco.fish){
+      if(!fish.alive||!fish.isNetworkPlayer||!fish.pos)continue;
+      const sx=cx+(fish.pos.x-this.camera.x)*zoom;
+      const sy=cy+(fish.pos.y-this.camera.y)*zoom;
+      const dx=sx-cx,dy=sy-cy;
+      if(Math.abs(dx)<=halfW&&Math.abs(dy)<=halfH)continue;
+      const scale=Math.min(halfW/Math.max(1,Math.abs(dx)),halfH/Math.max(1,Math.abs(dy)));
+      const x=cx+dx*scale,y=cy+dy*scale;
+      const angle=Math.atan2(dy,dx);
+
+      ctx.save();
+      ctx.translate(x,y);ctx.rotate(angle);
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha=0.22*pulse;
+      ctx.fillStyle='#ffcc44';ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=0.95*pulse;
+      ctx.fillStyle='#ffcc44';
+      ctx.beginPath();ctx.moveTo(12,0);ctx.lineTo(-8,-7);ctx.lineTo(-4,0);ctx.lineTo(-8,7);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#fff3b0';ctx.lineWidth=1;ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  _updateCamera(player){
+    const target=player&&player.pos?player.pos:{x:CFG.W*0.5,y:CFG.H*0.5};
+    const stage=player&&player.stage?clamp(player.stage,1,4):1;
+    const stageT=(stage-1)/3;
+    const targetZoom=lerp(CFG.CAM_ZOOM_NEAR,CFG.CAM_ZOOM_FAR,stageT);
+    this.camera.zoom=lerp(this.camera.zoom,targetZoom,CFG.CAM_LERP);
+    const halfW=CFG.VIEW_W*0.5/this.camera.zoom;
+    const halfH=CFG.VIEW_H*0.5/this.camera.zoom;
+    this.camera.x=clamp(target.x,halfW,CFG.W-halfW);
+    this.camera.y=clamp(target.y,halfH,CFG.H-halfH);
+    this._view.left=this.camera.x-halfW;
+    this._view.right=this.camera.x+halfW;
+    this._view.top=this.camera.y-halfH;
+    this._view.bottom=this.camera.y+halfH;
+  }
+
+  _visible(pos,pad=0){
+    return pos&&pos.x>=this._view.left-pad&&pos.x<=this._view.right+pad
+      &&pos.y>=this._view.top-pad&&pos.y<=this._view.bottom+pad;
+  }
+
   /* ============================================================
-     SORTED FISH  —  periodic, not per-frame
+     SORTED FISH — periodic, not per-frame
      ============================================================ */
   _sortedFishFor(fish){
+    if(!fish)return [];
     const n=fish.length;
     const needResort=
       this._sortedFish===null ||
@@ -249,7 +338,7 @@ class Renderer{
     if(this.quality===0)return;
     const arr=this._ambient;
     const dt=this._dt;
-    const t=(typeof performance!=='undefined'?performance.now():Date.now())/1000;
+    const t=this._time;
     const W=CFG.W,H=CFG.H;
 
     ctx.save();
@@ -273,11 +362,12 @@ class Renderer{
   drawFood(ctx){
     const food=this.eco.food;
     if(!food||!food.length)return;
-    const t=(typeof performance!=='undefined'?performance.now():Date.now())/700;
+    const t=this._time*1.43;
     const q=this.quality;
 
     for(let i=0;i<food.length;i++){
       const f=food[i];
+      if(!f||!f.pos)continue;
       const r=f.r||2;
       if(q>=1){
         const a=0.5+0.5*Math.sin(t+(f.phase||0));
@@ -299,7 +389,7 @@ class Renderer{
   }
 
   /* ============================================================
-     INTENT LINES  —  filtered, prioritized, capped
+     INTENT LINES — filtered, prioritized, capped
      ============================================================ */
   drawIntentLines(ctx){
     const p=this.eco.player;
@@ -308,6 +398,7 @@ class Renderer{
     const R=p.visionRange*1.05;
     const r2=R*R;
     const fish=this.eco.fish;
+    if(!fish)return;
     const pool=this._intentPool;
     pool.length=0;
 
@@ -354,8 +445,9 @@ class Renderer{
       let tx,ty;
       if(dst&&dst.alive&&typeof f.predict==='function'){
         const aim=f.predict(dst);
-        tx=aim.x;ty=aim.y;
-      }else{
+        if(aim&&isFinite(aim.x)&&isFinite(aim.y)){tx=aim.x;ty=aim.y;}
+      }
+      if(tx===undefined){
         tx=f.pos.x+Math.cos(f.angle)*90;
         ty=f.pos.y+Math.sin(f.angle)*90;
       }
@@ -382,14 +474,23 @@ class Renderer{
       const s=arr[i];
       if(!s||!s.pos)continue;
       if(!isFinite(s.r)||s.r<=0)continue;
-      const life=s.maxLife>0?s.life/s.maxLife:0;
-      const a=clamp(life,0,1)*0.7;
-      if(a<=0.01)continue;
+      const life=s.maxLife>0?clamp(s.life/s.maxLife,0,1):0;
+      if(life<=0.01)continue;
+
+      const a=life*0.75;
       ctx.strokeStyle='rgba(255,255,255,'+a+')';
-      ctx.lineWidth=1.4;
+      ctx.lineWidth=1+2.2*life;
       ctx.beginPath();
       ctx.arc(s.pos.x,s.pos.y,s.r,0,Math.PI*2);
       ctx.stroke();
+
+      if(this.quality>=1&&s.r>12){
+        ctx.strokeStyle='rgba(170,215,255,'+(a*0.42)+')';
+        ctx.lineWidth=1;
+        ctx.beginPath();
+        ctx.arc(s.pos.x,s.pos.y,s.r*0.72,0,Math.PI*2);
+        ctx.stroke();
+      }
     }
   }
 
@@ -408,6 +509,8 @@ class Renderer{
       if(!c||!c.pos)continue;
       const a=clamp(c.life/c.maxLife,0,1);
       if(a<=0.02)continue;
+      ctx.fillStyle='rgba(0,0,0,'+(a*0.5)+')';
+      ctx.fillText(c.text,c.pos.x+1,c.pos.y+1);
       ctx.fillStyle='rgba(255,204,68,'+a+')';
       ctx.fillText(c.text,c.pos.x,c.pos.y);
     }
@@ -415,22 +518,174 @@ class Renderer{
   }
 
   /* ============================================================
-     FISH SHADOW  —  cheap depth cue
+     FISH SHADOW — cheap depth cue, now size-clamped
      ============================================================ */
   drawFishShadow(ctx,fish,player){
     if(this.quality===0)return;
     const sz=fish.size;
-    const r=sz*1.05;
+    if(!isFinite(sz)||sz<=0)return;
 
-    if(!fish.isPlayer&&player&&player.alive){
+    /* clamp: a 400px fish must not paint a 400px black blob */
+    const r=Math.min(sz*1.05,240);
+
+    if(!fish.isPlayer&&player&&player.alive&&player.pos){
       const dx=fish.pos.x-player.pos.x,dy=fish.pos.y-player.pos.y;
-      const d2=dx*dx+dy*dy;
-      if(this.quality<2&&d2>520*520)return;
+      if(this.quality<2&&(dx*dx+dy*dy)>540*540)return;
     }
+    const off=1+Math.min(3,sz*0.05);
     ctx.fillStyle='rgba(0,0,0,0.34)';
     ctx.beginPath();
-    ctx.ellipse(fish.pos.x+2.5,fish.pos.y+3.5,r,r*0.62,0,0,Math.PI*2);
+    ctx.ellipse(fish.pos.x+off,fish.pos.y+off*1.3,r,r*0.62,0,0,Math.PI*2);
     ctx.fill();
+  }
+
+  /* ============================================================
+     GEOMETRY PIPELINE
+     ------------------------------------------------------------
+     spine  ->  catmull-rom resample  ->  travelling-wave undulation
+            ->  curvature-limited widths  ->  dorsal/ventral outline
+     ============================================================ */
+
+  _grow(a,n){while(a.length<n)a.push(0);}
+
+  /* Catmull-Rom resample of the simulation spine.
+     sps = samples per spine segment. Returns sample count. */
+  _resampleSpine(sp,len,sps){
+    const CX=this._cx,CY=this._cy;
+    const total=(len-1)*sps+1;
+    this._grow(CX,total);this._grow(CY,total);
+
+    let m=0;
+    for(let i=0;i<len-1;i++){
+      const p0=sp[i>0?i-1:i];
+      const p1=sp[i];
+      const p2=sp[i+1];
+      const p3=sp[i+2<len?i+2:i+1];
+      const x0=p0.x,y0=p0.y,x1=p1.x,y1=p1.y,x2=p2.x,y2=p2.y,x3=p3.x,y3=p3.y;
+      const a0x=2*x1,a1x=x2-x0,a2x=2*x0-5*x1+4*x2-x3,a3x=-x0+3*x1-3*x2+x3;
+      const a0y=2*y1,a1y=y2-y0,a2y=2*y0-5*y1+4*y2-y3,a3y=-y0+3*y1-3*y2+y3;
+      for(let s=0;s<sps;s++){
+        const t=s/sps,t2=t*t,t3=t2*t;
+        CX[m]=0.5*(a0x+a1x*t+a2x*t2+a3x*t3);
+        CY[m]=0.5*(a0y+a1y*t+a2y*t2+a3y*t3);
+        m++;
+      }
+    }
+    CX[m]=sp[len-1].x;
+    CY[m]=sp[len-1].y;
+    return m+1;
+  }
+
+  _computeNormals(m){
+    const CX=this._cx,CY=this._cy,NX=this._nx,NY=this._ny;
+    this._grow(NX,m);this._grow(NY,m);
+    for(let i=0;i<m;i++){
+      const i0=i>0?i-1:i, i1=i<m-1?i+1:i;
+      let dx=CX[i1]-CX[i0],dy=CY[i1]-CY[i0];
+      const d=Math.hypot(dx,dy);
+      if(d>1e-6){dx/=d;dy/=d;}else{dx=1;dy=0;}
+      NX[i]=-dy;NY[i]=dx;
+    }
+  }
+
+  /* secondary travelling wave: head stays anchored, tail ripples.
+     This is what makes the fish read as "alive" even when the sim
+     spine is stiff. */
+  _undulate(m,amp,phase,freq){
+    if(!(amp>0.01)||m<3)return;
+    const CX=this._cx,CY=this._cy,NX=this._nx,NY=this._ny;
+    const inv=1/(m-1);
+    for(let i=1;i<m;i++){
+      const t=i*inv;
+      const w=t*t;                       /* weight ramps toward the tail */
+      const off=amp*w*Math.sin(phase-t*freq);
+      CX[i]+=NX[i]*off;
+      CY[i]+=NY[i]*off;
+    }
+  }
+
+  /* widths = profile(t) * size, then clamped so a big fish turning
+     hard cannot fold its own outline inside-out (the classic
+     "bow-tie" giant fish bug), then lightly smoothed. */
+  _computeWidths(m,profileKey,sz,phase){
+    const CX=this._cx,CY=this._cy,HW=this._hw,SW=this._sw;
+    this._grow(HW,m);this._grow(SW,m);
+
+    const breathe=1+0.02*Math.sin(this._time*2.1+phase*0.5);
+    const hardMax=sz*1.45;
+
+    for(let i=0;i<m;i++){
+      const t=i/(m-1);
+      let w=widthAt(profileKey,t)*sz*breathe;
+      if(!isFinite(w)||w<0)w=0;
+      if(w>hardMax)w=hardMax;
+      HW[i]=w;
+    }
+
+    /* curvature limit — radius of the local turn */
+    for(let i=1;i<m-1;i++){
+      const ax=CX[i]-CX[i-1],ay=CY[i]-CY[i-1];
+      const bx=CX[i+1]-CX[i],by=CY[i+1]-CY[i];
+      const la=Math.hypot(ax,ay),lb=Math.hypot(bx,by);
+      if(la<1e-5||lb<1e-5)continue;
+      let c=(ax*bx+ay*by)/(la*lb);
+      if(c>1)c=1;else if(c<-1)c=-1;
+      const ang=Math.acos(c);
+      if(ang<1e-4)continue;
+      const R=((la+lb)*0.5)/(2*Math.sin(ang*0.5));
+      const lim=R*0.85;
+      if(HW[i]>lim)HW[i]=lim;
+    }
+
+    /* smooth the clamp so it never leaves a visible notch */
+    for(let i=0;i<m;i++)SW[i]=HW[i];
+    for(let i=1;i<m-1;i++){
+      HW[i]=SW[i]*0.6+(SW[i-1]+SW[i+1])*0.2;
+    }
+  }
+
+  _buildOutline(m){
+    const CX=this._cx,CY=this._cy,NX=this._nx,NY=this._ny,HW=this._hw;
+    const TX=this._tx,TY=this._ty,BX=this._bx,BY=this._by;
+    this._grow(TX,m);this._grow(TY,m);this._grow(BX,m);this._grow(BY,m);
+
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+
+    for(let i=0;i<m;i++){
+      const w=HW[i],x=CX[i],y=CY[i],ox=NX[i]*w,oy=NY[i]*w;
+      const tx=x+ox,ty=y+oy,bx=x-ox,by=y-oy;
+      TX[i]=tx;TY[i]=ty;BX[i]=bx;BY[i]=by;
+      if(tx<minX)minX=tx; if(tx>maxX)maxX=tx;
+      if(bx<minX)minX=bx; if(bx>maxX)maxX=bx;
+      if(ty<minY)minY=ty; if(ty>maxY)maxY=ty;
+      if(by<minY)minY=by; if(by>maxY)maxY=by;
+    }
+    this._minX=minX;this._maxX=maxX;this._minY=minY;this._maxY=maxY;
+  }
+
+  /* quadratic-smoothed traversal of a polyline (already moveTo'd) */
+  _curveForward(ctx,x,y,m){
+    for(let i=1;i<m-1;i++){
+      const mx=(x[i]+x[i+1])*0.5,my=(y[i]+y[i+1])*0.5;
+      ctx.quadraticCurveTo(x[i],y[i],mx,my);
+    }
+    if(m>1)ctx.lineTo(x[m-1],y[m-1]);
+  }
+  _curveBackward(ctx,x,y,m){
+    for(let i=m-2;i>0;i--){
+      const mx=(x[i]+x[i-1])*0.5,my=(y[i]+y[i-1])*0.5;
+      ctx.quadraticCurveTo(x[i],y[i],mx,my);
+    }
+    if(m>1)ctx.lineTo(x[0],y[0]);
+  }
+
+  _bodyPath(ctx,m){
+    ctx.beginPath();
+    ctx.moveTo(this._tx[0],this._ty[0]);
+    this._curveForward(ctx,this._tx,this._ty,m);
+    ctx.lineTo(this._bx[m-1],this._by[m-1]);
+    this._curveBackward(ctx,this._bx,this._by,m);
+    ctx.closePath();
   }
 
   /* ============================================================
@@ -441,112 +696,125 @@ class Renderer{
     if(typeof fish.renderSpine!=='function')return;
 
     const sp=fish.renderSpine();
+    if(!sp)return;
     const n=sp.length;
     if(n<2)return;
 
-    /* grow reusable buffers monotonically — never shrink */
-    const top=this._top;
-    const bot=this._bot;
-    while(top.length<n){top.push({x:0,y:0});bot.push({x:0,y:0});}
-
-    const profileKey=fish.profileKey();
     const sz=fish.size;
     if(!isFinite(sz)||sz<=0)return;
 
+    /* one NaN anywhere poisons the whole path — validate up front */
     for(let i=0;i<n;i++){
       const p=sp[i];
-      const prev=sp[i>0?i-1:i];
-      const next=sp[i<n-1?i+1:i];
-      let dx=next.x-prev.x,dy=next.y-prev.y;
-      const d=Math.hypot(dx,dy);
-      if(d<0.0001){dx=1;dy=0;}
-      else{dx/=d;dy/=d;}
-      const px=-dy,py=dx;
-      const t=i/(n-1);
-      const w=widthAt(profileKey,t)*sz;
-      top[i].x=p.x+px*w;top[i].y=p.y+py*w;
-      bot[i].x=p.x-px*w;bot[i].y=p.y-py*w;
+      if(!p||!isFinite(p.x)||!isFinite(p.y))return;
     }
+
+    const isP=fish.isPlayer===true;
+    const player=this.eco.player;
+
+    /* ---------------- detail budget ---------------- */
+    let detail=3;
+    if(!isP){
+      if(player&&player.alive&&player.pos){
+        const dx=fish.pos.x-player.pos.x,dy=fish.pos.y-player.pos.y;
+        const d2=dx*dx+dy*dy;
+        if(d2>940*940)detail=0;
+        else if(d2>600*600)detail=1;
+        else if(d2>300*300)detail=2;
+      }else detail=2;
+    }
+    if(this.quality===0)detail=detail>1?1:detail;
+    else if(this.quality===1)detail=detail>2?2:detail;
+
+    /* ---------------- motion phase ---------------- */
+    const t=this._time;
+    const phase=isFinite(fish.swimPhase)?fish.swimPhase:t*6;
+    const vx=fish.vel?fish.vel.x:0, vy=fish.vel?fish.vel.y:0;
+    const speed=Math.hypot(vx,vy);
+    const speedT=Math.min(1,speed/280);
+    const moving=speed>4;
+
+    /* ---------------- geometry ---------------- */
+    const maxSamples=this.quality>=2?96:64;
+    let sps=1;
+    if(sz>16&&this.quality>=1)sps=sz>44?3:2;
+    if((n-1)*sps+1>maxSamples)sps=Math.max(1,Math.floor((maxSamples-1)/(n-1)));
+
+    const m=this._resampleSpine(sp,n,sps);
+    if(m<2)return;
+
+    this._computeNormals(m);
+    const undAmp=sz*(0.045+0.055*speedT)*(isP?1.2:1)*(moving?1:0.45);
+    this._undulate(m,undAmp,phase,3.4+2.6*speedT);
+    this._computeNormals(m);
+
+    this._computeWidths(m,fish.profileKey(),sz,phase);
+    this._buildOutline(m);
 
     const alpha=fish.spawnTimer>0?clamp(1-fish.spawnTimer/0.5,0,1):1;
     if(alpha<=0.01)return;
 
-    const isP=fish.isPlayer===true;
     const bodyColor=fish.colorKey();
-    const accent=fish.accentKey();
-
-    /* distance to player determines detail budget */
-    const player=this.eco.player;
-    let detail=3;
-    if(!isP){
-      if(player&&player.alive){
-        const dx=fish.pos.x-player.pos.x,dy=fish.pos.y-player.pos.y;
-        const d2=dx*dx+dy*dy;
-        if(d2>900*900)detail=0;
-        else if(d2>560*560)detail=1;
-        else if(d2>280*280)detail=2;
-        else detail=3;
-      }else{
-        detail=2;
-      }
-    }
-    /* quality clamp */
-    if(this.quality===0)detail=Math.min(detail,1);
-    else if(this.quality===1)detail=Math.min(detail,2);
+    const outlineStyle=isP?'#ffea99':'#ffffff';
 
     ctx.save();
     ctx.globalAlpha=alpha;
+    ctx.lineJoin='round';
+    ctx.lineCap='round';
 
-    /* ---- skin flags ---- */
+    /* ---------------- skin flags ---------------- */
     let glowMul=isP?1:0.45;
     let bodyAlphaMul=1;
-    let outlineStyle=isP?'#ffea99':'#ffffff';
-    let outlineWidth=1.1;
+    let outlineWidth=isP?1.4:1.1;
     let outlineDash=null;
     let striped=false;
-    let outlineOffset=0;
     let holo=false;
     let reverse=false;
+    const outlineOffset=3;
 
     const skin=isP?fish.skin:null;
     if(skin==='ghost'){
       glowMul=1.6;bodyAlphaMul=0.55;outlineWidth=0.8;
     }else if(skin==='glitch'){
-      const jx=Math.sin(fish.glitchPhase*1.7)*1.8;
-      const jy=Math.cos(fish.glitchPhase*2.1)*1.8;
-      ctx.translate(jx,jy);
+      const gp=isFinite(fish.glitchPhase)?fish.glitchPhase:t*9;
+      ctx.translate(Math.sin(gp*1.7)*1.8,Math.cos(gp*2.1)*1.8);
       outlineWidth=1.4;
     }else if(skin==='scanline'){striped=true;}
     else if(skin==='dotted'){outlineDash=[3,3];outlineWidth=1.5;}
     else if(skin==='solid'){outlineWidth=0;}
-    else if(skin==='holo'){outlineWidth=2.2;outlineOffset=3;holo=true;}
+    else if(skin==='holo'){outlineWidth=2.2;holo=true;}
     else if(skin==='reverse'){bodyAlphaMul=0;outlineWidth=2.0;reverse=true;}
 
-    /* ---- glow (cheap solid circle, no gradient) ---- */
+    /* ---------------- aura glow (radius clamped) ---------------- */
     if(this.quality>=1&&(isP||detail>=2)){
-      const glowR=sz*2.6;
-      if(glowR>0&&isFinite(glowR)){
-        ctx.save();
-        ctx.globalCompositeOperation='lighter';
-        const gA=(isP?0.28:0.08)*alpha*glowMul;
-        ctx.fillStyle=isP?(PLAYER_GLOW+gA+')'):('rgba(255,255,255,'+gA+')');
-        ctx.beginPath();
-        ctx.arc(fish.pos.x,fish.pos.y,glowR,0,Math.PI*2);
-        ctx.fill();
-        ctx.restore();
+      const cap=this.quality>=2?150:80;
+      const glowR=Math.min(sz*2.4,cap);
+      if(glowR>1){
+        const pulse=0.85+0.15*Math.sin(t*2.6+phase);
+        const gA=(isP?0.30:0.09)*alpha*glowMul*pulse;
+        if(gA>0.004){
+          ctx.save();
+          ctx.globalCompositeOperation='lighter';
+          ctx.fillStyle=isP?('rgba(255,204,68,'+gA+')'):('rgba(200,225,255,'+gA+')');
+          ctx.beginPath();
+          ctx.arc(fish.pos.x,fish.pos.y,glowR,0,Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        }
       }
     }
 
-    /* ---- evolution rings ---- */
+    /* ---------------- evolution rings ---------------- */
     if(fish.evolveAnim>0&&this.quality>=1){
-      const t=1-fish.evolveAnim/CFG.EVO_DUR;
+      const et=1-fish.evolveAnim/CFG.EVO_DUR;
       const rings=this.quality>=2?3:2;
+      const reach=Math.min(sz*5,260);
       for(let i=0;i<rings;i++){
-        const lt=(t+i*0.2)%1;
-        const rr=sz*1.6+lt*sz*5;
+        const lt=(et+i*0.2)%1;
+        const rr=sz*1.6+lt*reach;
         if(!isFinite(rr)||rr<=0)continue;
         const aa=(1-lt)*0.85*alpha;
-        ctx.strokeStyle=isP?(PLAYER_GLOW+aa+')'):('rgba(255,255,255,'+aa+')');
+        ctx.strokeStyle=isP?('rgba(255,204,68,'+aa+')'):('rgba(255,255,255,'+aa+')');
         ctx.lineWidth=2;
         ctx.beginPath();
         ctx.arc(fish.pos.x,fish.pos.y,rr,0,Math.PI*2);
@@ -554,27 +822,20 @@ class Renderer{
       }
     }
 
-    /* ---- holo offset --- */
+    /* ---------------- holo offset ghost ---------------- */
     if(holo){
       ctx.save();
       ctx.globalAlpha=alpha*0.55;
-      ctx.beginPath();
-      ctx.moveTo(top[0].x+outlineOffset,top[0].y+outlineOffset);
-      for(let i=1;i<n;i++)ctx.lineTo(top[i].x+outlineOffset,top[i].y+outlineOffset);
-      for(let i=n-1;i>=0;i--)ctx.lineTo(bot[i].x+outlineOffset,bot[i].y+outlineOffset);
-      ctx.closePath();
-      ctx.strokeStyle=isP?(PLAYER_GLOW+'0.6)'):'rgba(255,255,255,0.55)';
+      ctx.translate(outlineOffset,outlineOffset);
+      this._bodyPath(ctx,m);
+      ctx.strokeStyle=isP?'rgba(255,204,68,0.6)':'rgba(255,255,255,0.55)';
       ctx.lineWidth=1;
       ctx.stroke();
       ctx.restore();
     }
 
-    /* ---- body path ---- */
-    ctx.beginPath();
-    ctx.moveTo(top[0].x,top[0].y);
-    for(let i=1;i<n;i++)ctx.lineTo(top[i].x,top[i].y);
-    for(let i=n-1;i>=0;i--)ctx.lineTo(bot[i].x,bot[i].y);
-    ctx.closePath();
+    /* ---------------- body ---------------- */
+    this._bodyPath(ctx,m);
 
     if(bodyAlphaMul>0){
       ctx.globalAlpha=alpha*bodyAlphaMul;
@@ -583,9 +844,36 @@ class Renderer{
     }
     ctx.globalAlpha=alpha;
 
+    /* ---------------- volume shading ----------------
+       two translucent washes: dark on the back, light on the belly.
+       Cheap, and it makes the silhouette read as a 3D body. */
+    if(detail>=2&&this.quality>=1&&bodyAlphaMul>0){
+      const CX=this._cx,CY=this._cy;
+
+      ctx.beginPath();
+      ctx.moveTo(this._tx[0],this._ty[0]);
+      this._curveForward(ctx,this._tx,this._ty,m);
+      ctx.lineTo(CX[m-1],CY[m-1]);
+      for(let i=m-2;i>=0;i--)ctx.lineTo(CX[i],CY[i]);
+      ctx.closePath();
+      ctx.fillStyle='rgba(0,0,0,0.20)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(this._bx[0],this._by[0]);
+      this._curveForward(ctx,this._bx,this._by,m);
+      ctx.lineTo(CX[m-1],CY[m-1]);
+      for(let i=m-2;i>=0;i--)ctx.lineTo(CX[i],CY[i]);
+      ctx.closePath();
+      ctx.fillStyle='rgba(255,255,255,0.10)';
+      ctx.fill();
+    }
+
+    /* ---------------- outline ---------------- */
+    this._bodyPath(ctx,m);
     if(reverse){
       ctx.strokeStyle=isP?PLAYER_COLOR:'#dcdcdc';
-      ctx.lineWidth=1.6;
+      ctx.lineWidth=1.8;
       ctx.stroke();
     }else if(outlineWidth>0){
       ctx.strokeStyle=outlineStyle;
@@ -595,15 +883,26 @@ class Renderer{
       if(outlineDash)ctx.setLineDash([]);
     }
 
-    /* ---- scanlines ---- */
+    /* rim light along the dorsal edge, only for the closest fish */
+    if(detail>=3&&this.quality>=2&&bodyAlphaMul>0){
+      ctx.beginPath();
+      ctx.moveTo(this._tx[0],this._ty[0]);
+      this._curveForward(ctx,this._tx,this._ty,m);
+      ctx.strokeStyle='rgba(255,255,255,0.16)';
+      ctx.lineWidth=1;
+      ctx.stroke();
+    }
+
+    /* ---------------- scanlines ---------------- */
     if(striped&&detail>=2){
       ctx.save();
+      this._bodyPath(ctx,m);
       ctx.clip();
       ctx.strokeStyle=isP?'rgba(0,0,0,0.7)':'rgba(0,0,0,0.9)';
       ctx.lineWidth=1.4;
       const step=5;
-      const y0=fish.pos.y-sz*1.2,y1=fish.pos.y+sz*1.2;
-      const x0=fish.pos.x-sz*2,x1=fish.pos.x+sz*2;
+      const y0=this._minY,y1=this._maxY;
+      const x0=this._minX-4,x1=this._maxX+4;
       for(let y=y0;y<y1;y+=step){
         ctx.beginPath();
         ctx.moveTo(x0,y);
@@ -613,22 +912,22 @@ class Renderer{
       ctx.restore();
     }
 
-    /* ---- detail parts ---- */
+    /* ---------------- appendages ---------------- */
     if(detail>=1){
-      this.drawDorsal(ctx,fish,sp,top,bodyColor,outlineStyle);
-      this.drawTail(ctx,fish,sp,bodyColor,outlineStyle);
+      this.drawDorsal(ctx,fish,m,bodyColor,outlineStyle);
+      this.drawTail(ctx,fish,m,bodyColor,outlineStyle);
     }
     if(detail>=2){
-      this.drawPectoral(ctx,fish,sp,bodyColor,outlineStyle);
-      this.drawEye(ctx,fish,sp,isP);
+      this.drawPectoral(ctx,fish,m,bodyColor,outlineStyle);
+      this.drawEye(ctx,fish,m,isP,phase);
     }
     if(fish.lineage&&fish.lineage.lure&&detail>=1){
-      this.drawLure(ctx,fish,sp);
+      this.drawLure(ctx,fish,m);
     }
 
-    /* ---- player indicators ---- */
+    /* ---------------- player indicators ---------------- */
     if(isP){
-      ctx.strokeStyle=(PLAYER_GLOW+'0.7)');
+      ctx.strokeStyle='rgba(255,204,68,0.7)';
       ctx.lineWidth=1;
       ctx.setLineDash([5,4]);
       ctx.beginPath();
@@ -637,7 +936,7 @@ class Renderer{
       ctx.setLineDash([]);
 
       if(this.quality>=1){
-        ctx.strokeStyle=(PLAYER_GLOW+'0.06)');
+        ctx.strokeStyle='rgba(255,204,68,0.06)';
         ctx.beginPath();
         ctx.arc(fish.pos.x,fish.pos.y,fish.visionRange,0,Math.PI*2);
         ctx.stroke();
@@ -650,33 +949,37 @@ class Renderer{
   /* ============================================================
      LURE (abyss lineage)
      ============================================================ */
-  drawLure(ctx,fish,sp){
-    if(!sp||sp.length<2)return;
-    const head=sp[0];
-    const prev=sp[1];
-    let dx=head.x-prev.x,dy=head.y-prev.y;
-    const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
+  drawLure(ctx,fish,m){
+    if(m<2)return;
+    const CX=this._cx,CY=this._cy;
+    const headX=CX[0],headY=CY[0];
+    let dx=headX-CX[1],dy=headY-CY[1];
+    const d=Math.hypot(dx,dy);
+    if(d<1e-5){dx=1;dy=0;}else{dx/=d;dy/=d;}
     const px=-dy,py=dx;
-    const sway=Math.sin(fish.lurePhase)*0.5;
-    const reach=fish.size*1.6;
-    const lx=head.x+dx*reach+px*sway*fish.size*0.6;
-    const ly=head.y+dy*reach+py*sway*fish.size*0.6;
-    const isP=fish.isPlayer;
 
-    ctx.strokeStyle=isP?(PLAYER_GLOW+'0.5)'):'rgba(255,255,255,0.35)';
+    const sz=fish.size;
+    const lp=isFinite(fish.lurePhase)?fish.lurePhase:this._time*4;
+    const sway=Math.sin(lp)*0.5;
+    const reach=Math.min(sz*1.6,120);
+    const lx=headX+dx*reach+px*sway*sz*0.6;
+    const ly=headY+dy*reach+py*sway*sz*0.6;
+    const isP=fish.isPlayer===true;
+
+    ctx.strokeStyle=isP?'rgba(255,204,68,0.5)':'rgba(255,255,255,0.35)';
     ctx.lineWidth=0.8;
     ctx.beginPath();
-    ctx.moveTo(head.x,head.y);
+    ctx.moveTo(headX,headY);
     ctx.lineTo(lx,ly);
     ctx.stroke();
 
+    const pulse=0.6+0.4*Math.sin(lp*2);
+    const r=Math.max(2,Math.min(sz*0.4,26))*pulse;
+
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const pulse=0.6+0.4*Math.sin(fish.lurePhase*2);
-    const r=Math.max(2,fish.size*0.4)*pulse;
-    /* flat glow instead of radial gradient */
     const gA=0.35*pulse;
-    ctx.fillStyle=isP?(PLAYER_GLOW+gA+')'):('rgba(255,255,255,'+gA+')');
+    ctx.fillStyle=isP?('rgba(255,204,68,'+gA+')'):('rgba(255,255,255,'+gA+')');
     ctx.beginPath();
     ctx.arc(lx,ly,r*2.2,0,Math.PI*2);
     ctx.fill();
@@ -689,216 +992,277 @@ class Renderer{
   }
 
   /* ============================================================
-     DORSAL  —  state-aware subtle animation
+     DORSAL FIN — state-aware, softly curved
      ============================================================ */
-  drawDorsal(ctx,fish,sp,top,bodyColor,outlineStyle){
-    const style=fish.dorsalKey();
-    if(style==='none')return;
+  drawDorsal(ctx,fish,m,bodyColor,outlineStyle){
+    const style=(typeof fish.dorsalKey==='function')?fish.dorsalKey():'none';
+    if(style==='none'||m<5)return;
 
-    let t=0.35;
-    if(style==='rear')t=0.72;
-    if(style==='crest')t=0.5;
+    let pos=0.35;
+    if(style==='rear')pos=0.74;
+    else if(style==='crest')pos=0.5;
 
-    const idx=Math.floor(t*(sp.length-1));
-    const p=top[idx];
-    const prev=top[idx>1?idx-2:0];
-    const next=top[idx<sp.length-2?idx+2:sp.length-1];
-    let dx=next.x-prev.x,dy=next.y-prev.y;
-    const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
-    const px=-dy,py=dx;
-    const c=sp[idx];
-    const toOutX=p.x-c.x,toOutY=p.y-c.y;
-    const dot=px*toOutX+py*toOutY;
-    const nx=dot<0?-px:px,ny=dot<0?-py:py;
+    const CX=this._cx,CY=this._cy,TX=this._tx,TY=this._ty;
+    const idx=Math.max(1,Math.min(m-2,Math.round(pos*(m-1))));
+    const pX=TX[idx],pY=TY[idx];
+
+    let dx=CX[idx+1]-CX[idx-1],dy=CY[idx+1]-CY[idx-1];
+    const d=Math.hypot(dx,dy);
+    if(d<1e-5){dx=1;dy=0;}else{dx/=d;dy/=d;}
+    const nx=-dy,ny=dx;
+
+    /* fin must stick OUT of the body, never fold inside */
+    const sgn=(nx*(pX-CX[idx])+ny*(pY-CY[idx]))>=0?1:-1;
+    const ox=nx*sgn,oy=ny*sgn;
+
     const sz=fish.size;
-
-    /* sway with swim phase */
-    const sway=Math.sin(fish.swimPhase*1.4)*0.06;
+    const ph=isFinite(fish.swimPhase)?fish.swimPhase:this._time*6;
+    const sway=Math.sin(ph*1.35)*0.10;
 
     ctx.fillStyle=bodyColor;
     ctx.strokeStyle=outlineStyle;
-    ctx.lineWidth=1;
+    ctx.lineWidth=0.9;
+
+    if(style==='crest'){
+      const i0=Math.max(1,Math.round(m*0.16));
+      const i1=Math.max(i0+1,Math.round(m*0.92));
+      ctx.beginPath();
+      ctx.moveTo(TX[i0],TY[i0]);
+      for(let i=i0;i<=i1;i++){
+        const tt=(i-i0)/(i1-i0);
+        const h=sz*(0.30+0.30*Math.sin(tt*Math.PI)+sway*(0.5+0.5*tt));
+        const a0=i>1?i-1:i, a1=i<m-1?i+1:i;
+        let tx1=TX[a1]-TX[a0],ty1=TY[a1]-TY[a0];
+        const dl=Math.hypot(tx1,ty1);
+        if(dl<1e-5){tx1=1;ty1=0;}else{tx1/=dl;ty1/=dl;}
+        let onx=-ty1,ony=tx1;
+        if(onx*(TX[i]-CX[i])+ony*(TY[i]-CY[i])<0){onx=-onx;ony=-ony;}
+        ctx.lineTo(TX[i]+onx*h,TY[i]+ony*h);
+      }
+      for(let i=i1;i>=i0;i--)ctx.lineTo(TX[i],TY[i]);
+      ctx.closePath();
+      ctx.fill();
+      if(outlineStyle)ctx.stroke();
+      return;
+    }
 
     if(style==='tiny'){
+      const h=sz*(0.28+sway*0.4);
       ctx.beginPath();
-      ctx.moveTo(p.x-nx*sz*0.15,p.y-ny*sz*0.15);
-      ctx.lineTo(p.x+nx*sz*0.28,p.y+ny*sz*0.28);
-      ctx.lineTo(p.x+dx*sz*0.28+nx*sz*0.05,p.y+dy*sz*0.28+ny*sz*0.05);
-      ctx.closePath();ctx.fill();ctx.stroke();
-    }else if(style==='spiny'){
-      ctx.beginPath();
-      const segs=4,span=sz*0.9;
-      ctx.moveTo(p.x-nx*sz*0.05-dx*span*0.4,p.y-ny*sz*0.05-dy*span*0.4);
-      for(let i=0;i<segs;i++){
-        const f=(i+0.5)/segs;
-        const h=sz*(0.45+sway);
-        ctx.lineTo(p.x+dx*span*(f-0.4)+nx*h,p.y+dy*span*(f-0.4)+ny*h);
-        ctx.lineTo(p.x+dx*span*(f-0.4+0.15)+nx*sz*0.05,p.y+dy*span*(f-0.4+0.15)+ny*sz*0.05);
-      }
-      ctx.lineTo(p.x+dx*span*0.5+nx*sz*0.05,p.y+dy*span*0.5+ny*sz*0.05);
-      ctx.closePath();ctx.fill();ctx.stroke();
-    }else if(style==='rear'){
-      ctx.beginPath();
-      ctx.moveTo(p.x-nx*sz*0.1-dx*sz*0.2,p.y-ny*sz*0.1-dy*sz*0.2);
-      ctx.lineTo(p.x+nx*sz*0.35-dx*sz*0.1,p.y+ny*sz*0.35-dy*sz*0.1);
-      ctx.lineTo(p.x-nx*sz*0.1+dx*sz*0.2,p.y-ny*sz*0.1+dy*sz*0.2);
-      ctx.closePath();ctx.fill();ctx.stroke();
-    }else if(style==='spike'){
-      const segs=3,span=sz*1.1;
-      ctx.beginPath();
-      ctx.moveTo(p.x-dx*span*0.5,p.y-dy*span*0.5);
-      for(let i=0;i<segs;i++){
-        const f=(i+0.5)/segs;
-        const h=sz*(0.85+sway*1.4);
-        ctx.lineTo(p.x+dx*span*(f-0.5)+nx*h,p.y+dy*span*(f-0.5)+ny*h);
-        ctx.lineTo(p.x+dx*span*(f-0.5+0.18)+nx*sz*0.05,p.y+dy*span*(f-0.5+0.18)+ny*sz*0.05);
-      }
-      ctx.lineTo(p.x+dx*span*0.5,p.y+dy*span*0.5);
-      ctx.closePath();ctx.fill();ctx.stroke();
-    }else if(style==='crest'){
-      ctx.beginPath();
-      const startIdx=Math.floor(sp.length*0.15);
-      const endIdx=Math.floor(sp.length*0.9);
-      const startTop=top[startIdx];
-      ctx.moveTo(startTop.x,startTop.y);
-      for(let i=startIdx;i<=endIdx;i++){
-        const tt=i/(sp.length-1);
-        const pt=top[i];
-        const h=sz*(0.35+0.25*Math.sin((tt-0.15)*Math.PI/0.75)+sway);
-        const prevT=top[i>0?i-1:i],nextT=top[i<sp.length-1?i+1:sp.length-1];
-        let ddx=nextT.x-prevT.x,ddy=nextT.y-prevT.y;
-        const dl=Math.hypot(ddx,ddy)||1;ddx/=dl;ddy/=dl;
-        ctx.lineTo(pt.x-ddy*h,pt.y+ddx*h);
-      }
-      for(let i=endIdx;i>=startIdx;i--)ctx.lineTo(top[i].x,top[i].y);
-      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.moveTo(pX-dx*sz*0.26-ox*sz*0.02,pY-dy*sz*0.26-oy*sz*0.02);
+      ctx.lineTo(pX+ox*h,pY+oy*h);
+      ctx.lineTo(pX+dx*sz*0.26-ox*sz*0.02,pY+dy*sz*0.26-oy*sz*0.02);
+      ctx.closePath();
+      ctx.fill();
+      if(outlineStyle)ctx.stroke();
+      return;
     }
+
+    if(style==='rear'){
+      const h=sz*(0.35+sway*0.5);
+      ctx.beginPath();
+      ctx.moveTo(pX-dx*sz*0.20-ox*sz*0.05,pY-dy*sz*0.20-oy*sz*0.05);
+      ctx.quadraticCurveTo(pX+ox*h+dx*sz*0.05,pY+oy*h+dy*sz*0.05,
+                           pX+dx*sz*0.22,pY+dy*sz*0.22);
+      ctx.closePath();
+      ctx.fill();
+      if(outlineStyle)ctx.stroke();
+      return;
+    }
+
+    /* spiny / spike: a row of soft spines along the back */
+    const segs=style==='spike'?3:4;
+    const span=sz*(style==='spike'?1.1:0.95);
+    const baseH=style==='spike'?0.85:0.5;
+    ctx.beginPath();
+    ctx.moveTo(pX-dx*span*0.45,pY-dy*span*0.45);
+    for(let i=0;i<segs;i++){
+      const f=(i+0.5)/segs;
+      const taper=1-0.45*Math.abs(f-0.5)*2;
+      const h=sz*(baseH+sway*1.2)*taper;
+      const bx0=pX+dx*span*(f-0.45);
+      const by0=pY+dy*span*(f-0.45);
+      ctx.quadraticCurveTo(bx0+ox*h*0.35,by0+oy*h*0.35,
+                           bx0+ox*h,by0+oy*h);
+      ctx.lineTo(bx0+dx*span*0.14,by0+dy*span*0.14);
+    }
+    ctx.lineTo(pX+dx*span*0.55,pY+dy*span*0.55);
+    ctx.closePath();
+    ctx.fill();
+    if(outlineStyle)ctx.stroke();
   }
 
   /* ============================================================
-     TAIL
+     TAIL — phase-lagged sweep, rippling trailing edge
      ============================================================ */
-  drawTail(ctx,fish,sp,bodyColor,outlineStyle){
-    const n=sp.length;
-    if(n<2)return;
-    const tp=sp[n-1],tp2=sp[n-2];
-    let dx=tp.x-tp2.x,dy=tp.y-tp2.y;
-    const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
+  drawTail(ctx,fish,m,bodyColor,outlineStyle){
+    if(m<2)return;
+    const CX=this._cx,CY=this._cy;
+    const t0=m-1,t1=m-2;
+    let dx=CX[t0]-CX[t1],dy=CY[t0]-CY[t1];
+    const d=Math.hypot(dx,dy);
+    if(d<1e-5){dx=1;dy=0;}else{dx/=d;dy/=d;}
     const px=-dy,py=dx;
-    const sz=fish.size*1.5;
-    const style=fish.shapeKey();
 
-    /* tail flutter scales with swim speed and state */
-    const spd=Math.hypot(fish.vel.x,fish.vel.y);
-    const flutter=0.05+Math.min(0.28,spd*0.006);
-    const flutterAng=Math.sin(fish.swimPhase*1.6)*flutter;
-    const cf=Math.cos(flutterAng),sf=Math.sin(flutterAng);
-    const pdx=dx*cf-px*sf,pdy=dy*cf-py*sf;
-    const ppx=-pdy,ppy=pdx;
+    const sz=fish.size;
+    const style=(typeof fish.shapeKey==='function')?fish.shapeKey():'forked';
+    const ph=isFinite(fish.swimPhase)?fish.swimPhase:this._time*6;
+    const speed=fish.vel?Math.hypot(fish.vel.x,fish.vel.y):0;
+
+    /* the tail lags the body — its sweep is phase-shifted */
+    const sweep=Math.sin(ph*1.6-0.9)*(0.08+Math.min(0.26,speed*0.0055));
+    const cs=Math.cos(sweep),sn=Math.sin(sweep);
+    const fdx=dx*cs-px*sn, fdy=dy*cs-py*sn;
+    const fpx=-fdy, fpy=fdx;
+
+    const rootX=CX[t0],rootY=CY[t0];
+    const L=Math.min(sz*1.35,160);
+    const S=Math.min(sz*(style==='fan'?1.25:1.0),150);
+
+    /* travelling ripple across the trailing edge */
+    const rip=Math.sin(ph*2.2)*0.12;
+    const upS=S*(0.85+rip);
+    const dnS=S*(0.85-rip);
+
+    const tipLx=rootX+fdx*L*0.65+fpx*upS, tipLy=rootY+fdy*L*0.65+fpy*upS;
+    const tipRx=rootX+fdx*L*0.65-fpx*dnS, tipRy=rootY+fdy*L*0.65-fpy*dnS;
+    const notchX=rootX+fdx*L*0.48, notchY=rootY+fdy*L*0.48;
+    const endX=rootX+fdx*L, endY=rootY+fdy*L;
 
     ctx.fillStyle=bodyColor;
     ctx.strokeStyle=outlineStyle;
     ctx.lineWidth=1;
 
-    if(style==='forked'){
-      ctx.beginPath();
-      ctx.moveTo(tp.x,tp.y);
-      ctx.lineTo(tp.x+pdx*sz*0.2+ppx*sz*0.65,tp.y+pdy*sz*0.2+ppy*sz*0.65);
-      ctx.lineTo(tp.x+pdx*sz*0.55,tp.y+pdy*sz*0.55);
-      ctx.lineTo(tp.x+pdx*sz*0.2-ppx*sz*0.65,tp.y+pdy*sz*0.2-ppy*sz*0.65);
-      ctx.closePath();ctx.fill();ctx.stroke();
-    }else if(style==='fan'){
-      ctx.beginPath();
-      ctx.moveTo(tp.x,tp.y);
-      ctx.quadraticCurveTo(tp.x+pdx*sz*0.7+ppx*sz*0.85,tp.y+pdy*sz*0.7+ppy*sz*0.85,
-                           tp.x+pdx*sz*1.05,tp.y+pdy*sz*1.05);
-      ctx.quadraticCurveTo(tp.x+pdx*sz*0.7-ppx*sz*0.85,tp.y+pdy*sz*0.7-ppy*sz*0.85,tp.x,tp.y);
-      ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();
+    if(style==='fan'){
+      ctx.moveTo(rootX,rootY);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.5+fpx*S*0.9,
+                           rootY+fdy*L*0.5+fpy*S*0.9,endX,endY);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.5-fpx*S*0.9,
+                           rootY+fdy*L*0.5-fpy*S*0.9,rootX,rootY);
     }else if(style==='crescent'){
-      ctx.beginPath();
-      ctx.moveTo(tp.x,tp.y);
-      ctx.quadraticCurveTo(tp.x+pdx*sz*0.4+ppx*sz*1.1,tp.y+pdy*sz*0.4+ppy*sz*1.1,
-                           tp.x+pdx*sz*1.15+ppx*sz*0.45,tp.y+pdy*sz*1.15+ppy*sz*0.45);
-      ctx.lineTo(tp.x+pdx*sz*0.7,tp.y+pdy*sz*0.7);
-      ctx.lineTo(tp.x+pdx*sz*1.15-ppx*sz*0.45,tp.y+pdy*sz*1.15-ppy*sz*0.45);
-      ctx.quadraticCurveTo(tp.x+pdx*sz*0.4-ppx*sz*1.1,tp.y+pdy*sz*0.4-ppy*sz*1.1,tp.x,tp.y);
-      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.moveTo(rootX,rootY);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.35+fpx*S*1.15,
+                           rootY+fdy*L*0.35+fpy*S*1.15,tipLx,tipLy);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.72,rootY+fdy*L*0.72,notchX,notchY);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.72,rootY+fdy*L*0.72,tipRx,tipRy);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.35-fpx*S*1.15,
+                           rootY+fdy*L*0.35-fpy*S*1.15,rootX,rootY);
     }else if(style==='spike'){
+      ctx.moveTo(rootX,rootY);
+      ctx.lineTo(tipLx,tipLy);
+      ctx.lineTo(rootX+fdx*L*0.62+fpx*S*0.28,rootY+fdy*L*0.62+fpy*S*0.28);
+      ctx.lineTo(rootX+fdx*L*0.95,rootY+fdy*L*0.95);
+      ctx.lineTo(rootX+fdx*L*0.62-fpx*S*0.28,rootY+fdy*L*0.62-fpy*S*0.28);
+      ctx.lineTo(tipRx,tipRy);
+    }else{ /* forked (default) */
+      ctx.moveTo(rootX,rootY);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.3+fpx*S*0.55,
+                           rootY+fdy*L*0.3+fpy*S*0.55,tipLx,tipLy);
+      ctx.lineTo(notchX,notchY);
+      ctx.lineTo(tipRx,tipRy);
+      ctx.quadraticCurveTo(rootX+fdx*L*0.3-fpx*S*0.55,
+                           rootY+fdy*L*0.3-fpy*S*0.55,rootX,rootY);
+    }
+    ctx.closePath();
+    ctx.fill();
+    if(outlineStyle)ctx.stroke();
+  }
+
+  /* ============================================================
+     PECTORAL FINS — independent flap per side
+     ============================================================ */
+  drawPectoral(ctx,fish,m,bodyColor,outlineStyle){
+    if(m<5)return;
+    const CX=this._cx,CY=this._cy;
+    const idx=Math.max(1,Math.min(m-2,Math.round(m*0.30)));
+    const pX=CX[idx],pY=CY[idx];
+
+    let dx=CX[idx+1]-CX[idx-1],dy=CY[idx+1]-CY[idx-1];
+    const d=Math.hypot(dx,dy);
+    if(d<1e-5){dx=1;dy=0;}else{dx/=d;dy/=d;}
+    const nx=-dy,ny=dx;
+
+    const sz=fish.size;
+    const ph=isFinite(fish.swimPhase)?fish.swimPhase:this._time*6;
+    const st=fish.state;
+
+    let amp=0.35,freq=1.8;
+    if(st==='FLEE'){amp=0.62;freq=3.0;}
+    else if(st==='CHASE'||st==='ATTACK'||st==='INTERCEPT'){amp=0.52;freq=2.6;}
+    else if(st==='STALK'){amp=0.20;freq=1.2;}
+
+    const sides=(this.quality>=2&&m>9)?2:1;
+
+    for(let s=0;s<sides;s++){
+      const sgn=s===0?1:-1;
+      const flap=Math.sin(ph*freq+sgn*1.1)*amp;
+      const ax=nx*sgn,ay=ny*sgn;
+      const ang=Math.atan2(ay,ax)+flap*sgn;
+
+      ctx.save();
+      ctx.translate(pX,pY);
+      ctx.rotate(ang);
+      ctx.globalAlpha*=(s===0?0.85:0.6);
+
       ctx.beginPath();
-      ctx.moveTo(tp.x,tp.y);
-      ctx.lineTo(tp.x+pdx*sz*0.3+ppx*sz*0.9,tp.y+pdy*sz*0.3+ppy*sz*0.9);
-      ctx.lineTo(tp.x+pdx*sz*0.55+ppx*sz*0.35,tp.y+pdy*sz*0.55+ppy*sz*0.35);
-      ctx.lineTo(tp.x+pdx*sz*0.7,tp.y+pdy*sz*0.7);
-      ctx.lineTo(tp.x+pdx*sz*0.55-ppx*sz*0.35,tp.y+pdy*sz*0.55-ppy*sz*0.35);
-      ctx.lineTo(tp.x+pdx*sz*0.3-ppx*sz*0.9,tp.y+pdy*sz*0.3-ppy*sz*0.9);
-      ctx.closePath();ctx.fill();ctx.stroke();
+      ctx.moveTo(0,0);
+      ctx.quadraticCurveTo(sz*0.55,sz*0.45,sz*0.75,sz*0.10);
+      ctx.quadraticCurveTo(sz*0.40,-sz*0.25,-sz*0.10,0);
+      ctx.closePath();
+
+      ctx.fillStyle=bodyColor;
+      ctx.fill();
+      if(outlineStyle){
+        ctx.strokeStyle=outlineStyle;
+        ctx.lineWidth=0.8;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
   }
 
   /* ============================================================
-     PECTORAL FIN
+     EYE — sub-linear scaling, pupil tracking, state glow
      ============================================================ */
-  drawPectoral(ctx,fish,sp,bodyColor,outlineStyle){
-    const n=sp.length;
-    if(n<4)return;
-    const idx=Math.floor(n*0.28);
-    const p=sp[idx];
-    const prev=sp[idx>0?idx-1:0];
-    let dx=p.x-prev.x,dy=p.y-prev.y;
-    const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
-    const px=-dy,py=dx;
-    const sz=fish.size*0.5;
+  drawEye(ctx,fish,m,isP,phase){
+    if(m<3)return;
+    const CX=this._cx,CY=this._cy;
+    const pX=CX[1],pY=CY[1];
 
-    /* flap amplitude depends on state */
-    const st=fish.state;
-    let flapAmp=0.35;
-    let flapFreq=1.8;
-    if(st==='FLEE'){flapAmp=0.6;flapFreq=3.0;}
-    else if(st==='CHASE'||st==='ATTACK'||st==='INTERCEPT'){flapAmp=0.5;flapFreq=2.6;}
-    else if(st==='STALK'){flapAmp=0.2;flapFreq=1.2;}
-    const flap=Math.sin(fish.swimPhase*flapFreq)*flapAmp;
+    let dx=pX-CX[0],dy=pY-CY[0];
+    const d=Math.hypot(dx,dy);
+    if(d<1e-5){dx=1;dy=0;}else{dx/=d;dy/=d;}
+    const nx=-dy,ny=dx;
 
-    ctx.save();
-    ctx.translate(p.x,p.y);
-    ctx.rotate(Math.atan2(py,px)+flap);
-    ctx.beginPath();
-    ctx.moveTo(0,0);
-    ctx.lineTo(sz*0.5,sz*0.6);
-    ctx.lineTo(-sz*0.2,sz*0.5);
-    ctx.closePath();
-    ctx.fillStyle=bodyColor;
-    ctx.strokeStyle=outlineStyle;
-    ctx.lineWidth=0.8;
-    ctx.globalAlpha*=0.75;
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
+    const sz=fish.size;
 
-  /* ============================================================
-     EYE  —  state-aware
-     ============================================================ */
-  drawEye(ctx,fish,sp,isP){
-    const n=sp.length;
-    if(n<3)return;
-    const p=sp[1];
-    const prev=sp[0];
-    let dx=p.x-prev.x,dy=p.y-prev.y;
-    const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
-    const px=-dy,py=dx;
-    const ex=p.x+px*fish.size*0.32;
-    const ey=p.y+py*fish.size*0.32;
-    const r=Math.max(1.1,fish.size*0.15);
+    /* sub-linear eye growth: sz*0.16 for small fish, ~sqrt for giants */
+    const r=Math.max(1.2,Math.min(sz*0.16,sz*0.10+Math.sqrt(sz)*0.55));
 
-    const st=fish.state;
+    /* keep the eye inside the actual body silhouette */
+    const hw1=this._hw[1]!==undefined?this._hw[1]:sz*0.4;
+    const off=Math.min(sz*0.30,hw1*0.55);
+    const ex=pX+nx*off, ey=pY+ny*off;
+
+    /* pupil tracks the current target, else looks forward */
+    let lookX=dx,lookY=dy;
+    const tg=fish.target;
+    if(tg&&tg.pos&&isFinite(tg.pos.x)&&isFinite(tg.pos.y)){
+      const ax=tg.pos.x-ex,ay=tg.pos.y-ey;
+      const al=Math.hypot(ax,ay);
+      if(al>1e-3){lookX=ax/al;lookY=ay/al;}
+    }
+
     const lowE=fish.maxEnergy>0&&(fish.energy/fish.maxEnergy)<0.22;
-    const aggressive=(fish.aggression&&fish.aggression()>0.7)||isP||st==='ATTACK';
-    const alert=(st==='FLEE'||st==='STALK');
+    const aggressive=(typeof fish.aggression==='function'&&fish.aggression()>0.7)
+                     ||isP||fish.state==='ATTACK';
+    const alert=(fish.state==='FLEE'||fish.state==='STALK');
 
     if(aggressive&&!lowE){
       ctx.save();
       ctx.globalCompositeOperation='lighter';
-      ctx.fillStyle=isP?(PLAYER_GLOW+'0.55)'):'rgba(255,255,255,0.36)';
+      ctx.fillStyle=isP?'rgba(255,204,68,0.55)':'rgba(255,255,255,0.36)';
       ctx.beginPath();
       ctx.arc(ex,ey,r*2.3,0,Math.PI*2);
       ctx.fill();
@@ -920,14 +1284,24 @@ class Renderer{
       ctx.moveTo(ex-r,ey);
       ctx.lineTo(ex+r,ey);
       ctx.stroke();
-    }else{
-      ctx.fillStyle='#fff';
+      return;
+    }
+
+    ctx.fillStyle='#fff';
+    ctx.beginPath();
+    ctx.arc(ex,ey,r,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle=isP?'#221100':'#000';
+    ctx.beginPath();
+    ctx.arc(ex+lookX*r*0.30,ey+lookY*r*0.30,r*0.55,0,Math.PI*2);
+    ctx.fill();
+
+    /* specular highlight */
+    if(r>1.8&&this.quality>=1){
+      ctx.fillStyle='rgba(255,255,255,0.85)';
       ctx.beginPath();
-      ctx.arc(ex,ey,r,0,Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle=isP?'#221100':'#000';
-      ctx.beginPath();
-      ctx.arc(ex+r*0.15,ey,r*0.55,0,Math.PI*2);
+      ctx.arc(ex+lookX*r*0.30-r*0.18,ey+lookY*r*0.30-r*0.18,r*0.17,0,Math.PI*2);
       ctx.fill();
     }
   }
@@ -939,7 +1313,6 @@ class Renderer{
     const arr=this.eco.particles;
     if(!arr||!arr.length)return;
     const q=this.quality;
-    /* cap particle draws if there are too many */
     const cap=q===0?200:(q===1?500:900);
     const n=Math.min(arr.length,cap);
 

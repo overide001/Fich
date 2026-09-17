@@ -18,4 +18,6 @@ class Input{
     if(this.keys['s']||this.keys['arrowdown'])y+=1;
     return{x,y};
   }
+  dash(){return !!this.keys.shift;}
+  bite(){return !!this.keys[' '];}
 }

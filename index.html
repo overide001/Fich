@@ -23,8 +23,9 @@
   <div>FOOD <span id="sFood">0</span></div>
   <div>TIME <span id="sTime">0</span></div>
 </div>
+<div id="activityFeed" aria-live="polite"></div>
 
-<div id="hint">WASD · ARROWS · HUNT SMALLER · FLEE LARGER</div>
+<div id="hint">WASD · ARROWS · SPACE ATTACK · HUNT SMALLER · FLEE LARGER</div>
 <div id="banner"><span id="bText">EVOLVED</span><small id="bSub">STAGE 2</small></div>
 <div id="toast"></div>
 
@@ -35,6 +36,7 @@
   <div class="coinBanner">◆ <span id="startCoins">0</span> COINS</div>
   <div class="menuRow">
     <button class="primary" id="startBtn">START</button>
+    <button class="primary" id="onlineBtn">PLAY ONLINE</button>
     <button id="openShop">SHOP</button>
   </div>
   <div class="help">PRESS <b>ENTER</b> OR <b>SPACE</b> TO PLAY · <b>S</b> FOR SHOP</div>
@@ -87,6 +89,9 @@
 <script src="js/canvas-renderer.js"></script>
 <!-- game-quit.js - confirms Esc quits and saves current run coins -->
 <script src="js/game-quit.js"></script>
+<!-- Socket.IO is served only by `npm start`; solo mode still works from a static host. -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/multiplayer-client.js"></script>
 <!-- game-controller.js - screens, shop actions, game loop, and HUD updates -->
 <script src="js/game-controller.js"></script>
 </body>

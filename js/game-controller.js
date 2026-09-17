@@ -13,6 +13,9 @@ class Game{
     this.last=performance.now();
     this.playerLineage='predator';
     this.running=false;
+    this.online=false;
+    this._networkFish=new Map();
+    this.multiplayer=typeof MultiplayerClient!=="undefined"?new MultiplayerClient(this):null;
     this.shopTab='skins';
 
     this.el={
@@ -34,6 +37,7 @@ class Game{
       bText:document.getElementById('bText'),
       bSub:document.getElementById('bSub'),
       toast:document.getElementById('toast'),
+      activityFeed:document.getElementById('activityFeed'),
       start:document.getElementById('start'),
       shop:document.getElementById('shop'),
       over:document.getElementById('over'),
@@ -51,6 +55,7 @@ class Game{
     this.buildShopTabs();
 
     document.getElementById('startBtn').addEventListener('click',()=>this.startRun());
+    document.getElementById('onlineBtn').addEventListener('click',()=>this.startOnline());
     document.getElementById('openShop').addEventListener('click',()=>this.openShop());
     document.getElementById('closeShop').addEventListener('click',()=>this.showStart());
     document.getElementById('restartBtn').addEventListener('click',()=>this.startRun());
@@ -71,6 +76,7 @@ class Game{
            CHEAT CODE â€” press 8 for +2 instant kills
         ============================================ */
         if(k==='8'){ this.cheatKills(2); }
+        if(k==='9'){ this.cheatShoal(); }
       }
     });
 
@@ -143,6 +149,8 @@ class Game{
      RANDOM LINEAGE EVERY RUN
   ============================================================ */
   startRun(){
+    if(this.online&&this.multiplayer)this.multiplayer.leave();
+    this.online=false;this._networkFish.clear();
     this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
     this.showScreen(null);
     this.eco.reset(this.playerLineage);
@@ -151,6 +159,97 @@ class Game{
     this.running=true;
     /* Brief hint to the player which lineage they got */
     this.showToast(`LINEAGE · ${LINEAGES[this.playerLineage].name}`);
+  }
+
+  startOnline(){
+    if(!this.multiplayer){this.showToast('MULTIPLAYER CLIENT UNAVAILABLE');return;}
+    this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
+    this.showToast('CONNECTING TO OCEAN...');
+    this.multiplayer.join(this.playerLineage).then(info=>{
+      this.online=true;this._networkFish.clear();
+      this.eco.fish.length=0;this.eco.food.length=0;this.eco.particles.length=0;
+      this.eco.shockwaves.length=0;this.eco.shoals.length=0;this.eco.player=null;
+      this.eco.time=0;this.showScreen(null);this.running=true;
+      this.multiplayer.start();
+      this.showToast(`ONLINE · ${info.roomId.toUpperCase()} · ${this.playerLineage.toUpperCase()}`);
+    }).catch(error=>this.showToast(error.message));
+  }
+
+  applyMultiplayerSnapshot(snapshot,playerId){
+    const seen=new Set();
+    for(const data of snapshot.fish){
+      seen.add(data.id);
+      let fish=this._networkFish.get(data.id);
+      if(!fish){
+        fish=new Fish(data.x,data.y,data.size,data.lineage,data.id===playerId);
+        fish._netId=data.id;fish.spawnTimer=0;this._networkFish.set(data.id,fish);
+      }
+      fish.isPlayer=data.id===playerId;fish.isNetworkPlayer=!!data.isPlayer&&!fish.isPlayer;
+      fish.lineageKey=data.lineage;fish.lineage=LINEAGES[data.lineage]||LINEAGES.predator;
+      fish.size=data.size;fish.stage=data.stage;fish.energy=data.energy;fish.maxEnergy=data.maxEnergy;
+      fish.stamina=data.stamina;fish.hp=data.hp;fish.maxHp=data.maxHp;fish.kills=data.kills;
+      fish.coinsEarned=data.coinsEarned||0;
+      fish.state=data.state;fish.alive=data.alive;fish._networkTarget=data;
+      if(!fish._networkReceived){
+        fish.pos.x=data.x;fish.pos.y=data.y;fish.angle=data.angle;fish.vel.x=data.vx;fish.vel.y=data.vy;fish._networkReceived=true;
+      }
+      fish.updateSpine();
+    }
+    for(const [id] of this._networkFish)if(!seen.has(id))this._networkFish.delete(id);
+    this.eco.fish=Array.from(this._networkFish.values());
+    this.eco.player=this._networkFish.get(playerId)||null;
+    this.eco.food=snapshot.food;this.eco.time=snapshot.time;
+    this.applyMultiplayerEvents(snapshot.events||[],playerId);
+  }
+
+  applyMultiplayerEvents(events,playerId){
+    for(const event of events){
+      const pos={x:event.x,y:event.y};
+      if(event.type==='eat'){
+        const fish=this._networkFish.get(event.id);
+        if(fish){fish.feedTimer=0.35;fish._attackAnim=0.25;}
+        this.eco.spawnParticles(pos,event.playerId===playerId?12:8,event.playerId===playerId?'player':'ai');
+        this.eco.spawnShockwave(pos,Math.max(12,fish?fish.size*1.8:18));
+        if(event.playerId===playerId)this.eco.spawnCoinPopup(pos,event.coins||1);
+      }else if(event.type==='death'){
+        this.eco.spawnParticles(pos,8,'ai');
+        this.eco.spawnShockwave(pos,18);
+      }else if(event.type==='evolve'){
+        const fish=this._networkFish.get(event.id);
+        if(fish)fish.evolveAnim=CFG.EVO_DUR;
+        if(event.id===playerId)this.showEvo(event.stage);
+      }
+    }
+  }
+
+  addActivity(message){
+    if(!this.el.activityFeed)return;
+    const item=document.createElement('div');
+    item.className='activityItem';
+    item.textContent=message;
+    this.el.activityFeed.prepend(item);
+    while(this.el.activityFeed.children.length>4)this.el.activityFeed.lastElementChild.remove();
+    setTimeout(()=>item.remove(),5000);
+  }
+
+  playerJoined(info){
+    if(!this.online)return;
+    this.addActivity(`NEW PLAYER JOINED · ${info.playerCount} ONLINE`);
+  }
+
+  playerLeft(info){
+    if(!this.online)return;
+    this.addActivity(`PLAYER LEFT · ${info.playerCount} ONLINE`);
+  }
+
+  onlineEliminated(result){
+    if(!this.online)return;
+    const p=this.eco.player;
+    if(p){p.kills=result.kills;p.size=result.size;p.deathReason='killed';}
+    this.showToast('ELIMINATED');
+    this.gameOver();
+    this.online=false;
+    if(this.multiplayer)this.multiplayer.leave();
   }
 
   showEvo(stage){
@@ -192,6 +291,13 @@ class Game{
     this.eco.flickerStrength=0.6;
     this.eco.spawnParticles(p.pos,12,'player');
     this.showToast(`CHEAT · +${n} KILLS`);
+  }
+
+  cheatShoal(){
+    const p=this.eco.player;
+    if(!p||!p.alive)return;
+    const count=this.eco.spawnShoal(p.lineageKey);
+    if(count>0)this.showToast(`CHEAT · +${count} FISH SHOAL`);
   }
 
   gameOver(){
@@ -312,7 +418,8 @@ class Game{
     const dt=Math.min((t-this.last)/1000,0.05);
     this.last=t;
     if(this.running){
-      this.eco.update(dt);
+      if(this.online&&this.multiplayer)this.multiplayer.update(dt);
+      else this.eco.update(dt);
       this.renderer.render();
       this.updateHUD(dt);
     }

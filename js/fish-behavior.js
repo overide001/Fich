@@ -9,6 +9,108 @@
    have been replaced with a richer simulation.
    ========================================================================== */
 
+class Shoal{
+  constructor(lineageKey){
+    this.lineageKey=lineageKey;
+    this.members=[];
+    this.center={x:0,y:0};
+    this.vel={x:0,y:0};
+    this.heading=0;
+    this.radius=0;
+    this.wanderAngle=Math.random()*Math.PI*2;
+    this.wanderTimer=2+Math.random()*3;
+    this.fleeDir=null;
+    this.threat=null;
+    this.alarm=null;
+    this.roles=new Map();
+    this._dead=false;
+  }
+  get size(){return this.members.length;}
+  add(f){
+    if(!f||this.members.indexOf(f)!==-1)return;
+    this.members.push(f);f.shoal=this;this._recalc(true);
+  }
+  remove(f){
+    const i=this.members.indexOf(f);
+    if(i===-1)return;
+    this.members.splice(i,1);
+    if(f.shoal===this)f.shoal=null;
+    if(!this.members.length)this._dead=true;
+    else this._recalc(true);
+  }
+  _recalc(hard){
+    const n=this.members.length;
+    if(!n)return;
+    let cx=0,cy=0,vx=0,vy=0,hx=0,hy=0;
+    for(const f of this.members){
+      cx+=f.pos.x;cy+=f.pos.y;vx+=f.vel.x;vy+=f.vel.y;
+      hx+=Math.cos(f.angle);hy+=Math.sin(f.angle);
+    }
+    this.center.x=cx/n;this.center.y=cy/n;
+    this.vel.x=vx/n;this.vel.y=vy/n;
+    this.heading=Math.atan2(hy,hx);
+    if(hard){
+      let r2=0;
+      for(const f of this.members){
+        const dx=f.pos.x-this.center.x,dy=f.pos.y-this.center.y;
+        r2=Math.max(r2,dx*dx+dy*dy);
+      }
+      this.radius=Math.sqrt(r2);
+    }
+  }
+  updateShared(dt){
+    this._recalc(false);
+    this.wanderTimer-=dt;
+    if(this.wanderTimer<=0){
+      this.wanderTimer=2.5+Math.random()*3.5;
+      this.wanderAngle+=(Math.random()-0.5);
+    }
+    if(this.threat&&(!this.threat.alive||this.threat.shoal===this))this.threat=null;
+    if(this.alarm){
+      this.alarm.age+=dt;
+      this.alarm.confidence*=Math.exp(-dt*0.55);
+      if(this.alarm.age>4||this.alarm.confidence<0.08)this.alarm=null;
+    }
+    this.fleeDir=this.threat
+      ?Math.atan2(this.center.y-this.threat.pos.y,this.center.x-this.threat.pos.x)
+      :null;
+  }
+  reportThreat(threat){
+    if(!threat||!threat.alive)return;
+    if(!this.threat){this.threat=threat;return;}
+    const dNew=Math.hypot(threat.pos.x-this.center.x,threat.pos.y-this.center.y);
+    const dOld=Math.hypot(this.threat.pos.x-this.center.x,this.threat.pos.y-this.center.y);
+    if(dNew<dOld*0.75)this.threat=threat;
+  }
+  reportAlarm(source,threat,danger){
+    if(!threat||!threat.pos)return;
+    const confidence=clamp(danger,0.15,1);
+    if(!this.alarm||confidence>this.alarm.confidence*0.8){
+      this.alarm={source,threat, x:threat.pos.x,y:threat.pos.y,
+        vx:threat.vel?threat.vel.x:0,vy:threat.vel?threat.vel.y:0,
+        danger:confidence,confidence,age:0};
+    }
+    this.reportThreat(threat);
+  }
+  roleFor(f){
+    if(!f)return 'FOLLOWER';
+    const existing=this.roles.get(f);
+    if(existing)return existing;
+    const leadership=f.psy.intelligence*0.55+f.psy.bravery*0.3+f.psy.curiosity*0.15;
+    const role=leadership>0.72?'SCOUT':f.psy.sociality>0.68?'DEFENDER':
+      f.psy.aggression>0.65?'ATTACKER':'FOLLOWER';
+    this.roles.set(f,role);return role;
+  }
+  accepts(f){
+    if(!f||!f.alive||f.lineageKey!==this.lineageKey||!f._isShoalFish())return false;
+    if(!this.members.length)return true;
+    let avg=0;
+    for(const member of this.members)avg+=member.size;
+    const ratio=f.size/Math.max(0.001,avg/this.members.length);
+    return ratio>=0.72&&ratio<=1.38;
+  }
+}
+
 class Fish{
   constructor(x,y,size,lineageKey,isPlayer=false,skin=null){
     /* --------------------------- CORE (unchanged) --------------------------- */
@@ -50,11 +152,18 @@ class Fish{
     this.lurePhase=Math.random()*Math.PI*2;
     this.glitchPhase=Math.random()*100;
 
+    this.turnRate=0;
+    this._wakeTimer=Math.random()*CFG.WAKE_INTERVAL;
+
     /* ---------------------- NEW: individual mind & body --------------------- */
     this._initPersonality();
     this._initMemory();
     this._initBody();
     this._initBehaviorCaches();
+
+    this.shoal=null;
+    this.shoalCooldown=0;
+    this._shoalMateList=[];
 
     this._envRef=null;
     this._ecoRef=null;
@@ -91,12 +200,43 @@ class Fish{
       vengeance:       clamp(0.30+rnd(-0.24,0.40),0,1)
     };
 
+    // A fish gets one enduring behavioural disposition.  It is not cosmetic:
+    // these values are consumed by the utility scorer, escape planner and movement.
+    const roll=Math.random();
+    let kind='FORAGER';
+    if(this.lineageKey==='swift')kind=roll<0.62?'RUNNER':roll<0.82?'SCOUT':'HUNTER';
+    else if(this.lineageKey==='abyss')kind=roll<0.70?'AMBUSHER':roll<0.90?'HUNTER':'LONER';
+    else if(this.lineageKey==='serpent')kind=roll<0.56?'AMBUSHER':roll<0.84?'HUNTER':'TERRITORIAL';
+    else if(this.lineageKey==='predator')kind=roll<0.62?'HUNTER':roll<0.83?'PACK_HUNTER':'GUARDIAN';
+    else if(this.lineageKey==='armor')kind=roll<0.48?'GUARDIAN':roll<0.75?'TERRITORIAL':'HUNTER';
+    else if(roll<0.3)kind='RUNNER';
+    this.temperament=kind;
+    this.intent={hunt:0,escape:0,social:0,territory:0,ambush:0};
+    if(kind==='HUNTER'||kind==='PACK_HUNTER'){
+      this.intent.hunt=0.38;this.psy.aggression=clamp(this.psy.aggression+0.20,0,1);
+      this.psy.bravery=clamp(this.psy.bravery+0.12,0,1);this.psy.riskTolerance=clamp(this.psy.riskTolerance+0.14,0,1);
+    }else if(kind==='AMBUSHER'){
+      this.intent.hunt=0.24;this.intent.ambush=0.45;this.psy.patience=clamp(this.psy.patience+0.25,0,1);
+      this.psy.intelligence=clamp(this.psy.intelligence+0.12,0,1);
+    }else if(kind==='RUNNER'){
+      this.intent.escape=0.48;this.psy.speedPreference=clamp(this.psy.speedPreference+0.25,0,1);
+      this.psy.bravery=clamp(this.psy.bravery-0.18,0,1);this.psy.riskTolerance=clamp(this.psy.riskTolerance-0.18,0,1);
+    }else if(kind==='GUARDIAN'){
+      this.intent.social=0.30;this.intent.territory=0.26;this.psy.sociality=clamp(this.psy.sociality+0.18,0,1);
+      this.psy.bravery=clamp(this.psy.bravery+0.18,0,1);
+    }else if(kind==='TERRITORIAL'){
+      this.intent.territory=0.42;this.psy.territoriality=clamp(this.psy.territoriality+0.28,0,1);
+    }
+
     this.huntStrategy=this._chooseStrategy();
     this.fear=0;
     this.anger=0;
   }
 
   _chooseStrategy(){
+    if(this.temperament==='AMBUSHER')return this.lineageKey==='serpent'?'AMBUSH':'STALK';
+    if(this.temperament==='PACK_HUNTER')return 'PACK';
+    if(this.temperament==='RUNNER')return 'INTERCEPT';
     const a=Math.random();
     switch(this.lineageKey){
       case 'serpent': return a<0.5?'AMBUSH':(a<0.8?'STALK':'INTERCEPT');
@@ -110,7 +250,16 @@ class Fish{
 
   _initMemory(){
     this.memory=[];
-    this.maxMemory=36;
+    this.maxMemory=48;
+    this._nextMemoryId=1;
+    this.knowledge={entities:new Map(), places:[], preyTypes:new Map(), routes:new Map()};
+    this.experience={
+      huntsStarted:0,huntsWon:0,huntsLost:0,
+      escapes:0,escapeFailures:0,
+      attacksReceived:0,foodFound:0,
+      strategy:{AMBUSH:0,STALK:0,INTERCEPT:0,CHASE:0,EXHAUST:0,CORNER:0,PACK:0},
+      strategyWins:{AMBUSH:0,STALK:0,INTERCEPT:0,CHASE:0,EXHAUST:0,CORNER:0,PACK:0}
+    };
   }
 
   _initBody(){
@@ -174,7 +323,114 @@ class Fish{
       if(wv>strength*ttl)return;
       this.memory.splice(wi,1);
     }
-    this.memory.push({type,x,y,strength,ttl,age:0});
+    this.memory.push({id:this._nextMemoryId++,type,x,y,strength,ttl,age:0,
+      confidence:clamp(strength/1.5,0.1,1),outcome:null,event:type,
+      emotionalWeight:strength,familiarity:0});
+  }
+
+  _rememberEntity(type,entity,event,outcome,strength,ttl,extra={}){
+    if(!entity||!entity.pos)return;
+    const id=entity._fishId||(entity._fishId='fish-'+Math.random().toString(36).slice(2));
+    let best=null;
+    for(const memory of this.memory){
+      if(memory.type===type&&memory.entityId===id){best=memory;break;}
+    }
+    if(!best){
+      if(this.memory.length>=this.maxMemory)this.memory.shift();
+      best={id:this._nextMemoryId++,type,entityId:id,age:0,encounters:0,
+        confidence:0.25};
+      this.memory.push(best);
+    }
+    const prior=best.outcome;
+    Object.assign(best,extra,{x:entity.pos.x,y:entity.pos.y,event,outcome,
+      entityLineage:entity.lineageKey,entitySize:entity.size,
+      lastVelocity:entity.vel?{x:entity.vel.x,y:entity.vel.y}:{x:0,y:0},
+      strength:Math.max(best.strength||0,strength),ttl:Math.max(best.ttl||0,ttl),
+      age:0,encounters:(best.encounters||0)+1,
+      confidence:clamp((best.confidence||0.25)+0.12,0,1)});
+    const relation=best.relationship || (type==='danger'?'threat':type==='prey'?'prey':'neutral');
+    best.relationship=relation;
+    best.emotionalWeight=clamp((best.emotionalWeight||0)*0.75+strength+(outcome==='failed'?0.25:0),0,2);
+    const identity=this.knowledge.entities.get(id)||{id,encounters:0,trust:0,threat:0,escaped:0,helped:0};
+    identity.encounters++; identity.lastSeen={x:entity.pos.x,y:entity.pos.y};
+    identity.lastVelocity=best.lastVelocity; identity.lineage=entity.lineageKey;
+    identity.strengthEstimate=entity.defSize?entity.defSize():entity.size;
+    if(type==='danger'||event==='attack')identity.threat=clamp(identity.threat+strength*0.45,0,2);
+    if(outcome==='failed'&&type==='prey')identity.escaped++;
+    if(event==='help')identity.helped++;
+    if(prior==='success'&&outcome==='success')identity.familiarity=(identity.familiarity||0)+0.2;
+    this.knowledge.entities.set(id,identity);
+    const typeKnow=this.knowledge.preyTypes.get(entity.lineageKey)||{attempts:0,wins:0,escape:0};
+    if(type==='prey'&&event==='hunt-end'){
+      typeKnow.attempts++; if(outcome==='success')typeKnow.wins++; else typeKnow.escape++;
+      this.knowledge.preyTypes.set(entity.lineageKey,typeKnow);
+    }
+  }
+
+  _learn(strategy,success){
+    if(!strategy||this.experience.strategy[strategy]===undefined)return;
+    this.experience.strategy[strategy]++;
+    if(success)this.experience.strategyWins[strategy]++;
+  }
+
+  _entityKnowledge(entity){
+    return entity&&entity._fishId?this.knowledge.entities.get(entity._fishId):null;
+  }
+
+  _receiveAlarm(source,threat,danger){
+    if(!threat||!threat.pos||source===this)return;
+    const d=Math.hypot(source.pos.x-this.pos.x,source.pos.y-this.pos.y);
+    const confidence=clamp(danger*(1-d/Math.max(1,this.visionRange*1.35)),0,1);
+    if(confidence<0.08)return;
+    const old=this._heardAlarm;
+    if(!old||confidence>old.confidence){
+      this._heardAlarm={threat,x:threat.pos.x,y:threat.pos.y,danger,confidence,age:0};
+      this._rememberEntity('danger',threat,'heard-alarm','warning',confidence,18,
+        {dangerLevel:danger,relationship:'threat'});
+    }
+  }
+
+  _rememberPlace(type,x,y,value,ttl=75){
+    this._remember(type,x,y,value,ttl);
+    this.knowledge.places.push({type,x,y,value,age:0,ttl});
+    if(this.knowledge.places.length>18)this.knowledge.places.shift();
+  }
+
+  _strategyReliability(strategy){
+    const attempts=this.experience.strategy[strategy]||0;
+    if(!attempts)return 0.5;
+    return clamp((this.experience.strategyWins[strategy]+1)/(attempts+2),0.12,0.92);
+  }
+
+  _maintainShoal(eco){
+    if(!this._isShoalFish()||this.psy.sociality<=0.2)return false;
+    if(this.shoal&&!this.shoal._dead){
+      const d=Math.hypot(this.pos.x-this.shoal.center.x,this.pos.y-this.shoal.center.y);
+      if(d>this.visionRange*1.9&&this.psy.sociality<0.55)this._leaveShoal('drift');
+      else return true;
+    }
+    if(this.shoal||this.shoalCooldown>0||!this._shoalMateList.length)return false;
+    let bestShoal=null,bestD=Infinity;
+    for(const mate of this._shoalMateList){
+      if(!mate.shoal||mate.shoal._dead||mate.shoal.members.length>=24)continue;
+      const d=this._distTo(mate);
+      if(d<bestD){bestD=d;bestShoal=mate.shoal;}
+    }
+    if(bestShoal&&bestShoal.accepts(this)){
+      bestShoal.add(this);
+      return true;
+    }
+    if(this._shoalMateList.length>=CFG.SHOAL_MIN_ALLIES){
+      const shoal=new Shoal(this.lineageKey);
+      shoal.add(this);
+      if(eco&&!eco.shoals)eco.shoals=[];
+      if(eco)eco.shoals.push(shoal);
+      for(const mate of this._shoalMateList){
+        if(!mate.shoal&&shoal.accepts(mate))shoal.add(mate);
+      }
+      return true;
+    }
+    return false;
   }
 
   _recall(type,x,y,maxR){
@@ -208,6 +464,14 @@ class Fish{
       m.strength*=Math.exp(-dt/m.ttl);
       if(m.age>=m.ttl||m.strength<0.05)this.memory.splice(i,1);
     }
+    for(let i=this.knowledge.places.length-1;i>=0;i--){
+      const p=this.knowledge.places[i];p.age+=dt;p.value*=Math.exp(-dt/p.ttl);
+      if(p.age>=p.ttl||p.value<0.04)this.knowledge.places.splice(i,1);
+    }
+    if(this._heardAlarm){
+      this._heardAlarm.age+=dt;this._heardAlarm.confidence*=Math.exp(-dt*0.7);
+      if(this._heardAlarm.age>4||this._heardAlarm.confidence<0.08)this._heardAlarm=null;
+    }
   }
 
   /* =========================================================================
@@ -223,19 +487,35 @@ class Fish{
     if(s>=CFG.EV_2)return 2;
     return 1;
   }
+  _isApex(){return this.size>=CFG.MAX_SIZE*0.68||this.stage>=4;}
   _spd(){
     let s=Math.max(CFG.SPD_MIN,CFG.SPD+CFG.SPD_SZ*this.size);
     s*=this.lineage.spdMul;
     if(this.isPlayer)s*=CFG.P_SPD;
     const agePenalty=1-Math.min(0.35,this.age*0.0009);
     const injPenalty=this.injured?0.78:1;
-    return s*agePenalty*injPenalty;
+    const sizeT=clamp(this.size/CFG.MAX_SIZE,0,1);
+    const bulkPenalty=1-CFG.SPD_TAPER*sizeT*sizeT;
+    return s*agePenalty*injPenalty*bulkPenalty;
   }
+  speedRatio(){return Math.hypot(this.vel.x,this.vel.y)/Math.max(1,this._spd());}
   _vis(){
-    let v=(CFG.VIS_BASE+CFG.VIS_SZ*this.size)*this.lineage.visMul;
-    if(this.injured)v*=0.9;
-    if(this.bleeding>0.5)v*=0.88;
-    return v;
+    let raw=(CFG.VIS_BASE+CFG.VIS_SZ*this.size)*this.lineage.visMul;
+    if(this._isApex())raw*=1.38;
+    if(this.injured)raw*=0.9;
+    if(this.bleeding>0.5)raw*=0.88;
+    if(raw>CFG.VIS_SOFT_START){
+      const over=raw-CFG.VIS_SOFT_START;
+      raw=CFG.VIS_SOFT_START+(CFG.VIS_CAP-CFG.VIS_SOFT_START)
+        *(1-Math.exp(-over/Math.max(1,CFG.VIS_CAP-CFG.VIS_SOFT_START)));
+    }
+    return raw;
+  }
+
+  _clampToWorld(){
+    const margin=Math.max(4,this.size*CFG.BODY_MARGIN_MUL);
+    this.pos.x=clamp(this.pos.x,margin,CFG.W-margin);
+    this.pos.y=clamp(this.pos.y,margin,CFG.H-margin);
   }
   _metab(){
     let m=CFG.METAB+this.size*CFG.METAB_SZ;
@@ -268,6 +548,9 @@ class Fish{
     if(this.blinkTimer<=0){this.blinkAnim=0.12;this.blinkTimer=rand(2.5,6);}
     if(this.blinkAnim>0)this.blinkAnim-=dt;
     this.glitchPhase+=dt*13;
+
+    if(this.shoalCooldown>0)this.shoalCooldown-=dt;
+    if(this.shoal&&this.shoal._dead)this.shoal=null;
 
     // combat timers
     if(this.biteCd>0)this.biteCd-=dt;
@@ -317,8 +600,12 @@ class Fish{
     this.visionRange=this._vis();
     this.perceive(eco.fish,eco.env,eco);
 
-    if(this.isPlayer)this.playerInput(eco.input,dt,eco);
+    const prevAngle=this.angle;
+    // Network rooms assign an input source per player; solo mode keeps the
+    // ecosystem-wide keyboard input exactly as before.
+    if(this.isPlayer)this.playerInput(this.netInput||eco.input,dt,eco);
     else{this.decide(dt,eco);this.moveAI(dt);}
+    this.turnRate=wrapA(this.angle-prevAngle)/Math.max(dt,0.0001);
 
     // AI auto-attack
     if(!this.isPlayer)this._autoCombat(dt,eco);
@@ -329,8 +616,15 @@ class Fish{
                        &&spdNow<this._spd()*0.4);
 
     // lazy territory
-    if(this.territory===null&&this.psy.territoriality>0.62){
+    if(this.territory===null&&(this.psy.territoriality>0.62||this._isApex())){
       this.territory={x:this.homeX,y:this.homeY,r:this.visionRange*1.8};
+    }
+
+    this._wakeTimer-=dt;
+    if(spdNow>CFG.WAKE_MIN_SPD&&this._wakeTimer<=0&&eco&&eco.spawnWake){
+      eco.spawnWake(this);
+      const speedFactor=clamp(spdNow/Math.max(1,this._spd()),0.5,2.2);
+      this._wakeTimer=CFG.WAKE_INTERVAL/speedFactor;
     }
 
     this.updateSpine();
@@ -347,6 +641,7 @@ class Fish{
     this._threatList.length=0;
     this._preyList.length=0;
     this._allyList.length=0;
+    this._shoalMateList.length=0;
     this.threatCount=0;this.preyCount=0;this.allyCount=0;
     this.bestThreat=null;this.bestThreatD=Infinity;
     this.bestPrey=null;  this.bestPreyD=Infinity;
@@ -361,7 +656,8 @@ class Fish{
       candidates=this._qbuf;
     }
 
-    const fovHalf=0.62+this.psy.intelligence*0.22;
+    const fovHalf=this._isApex()?Math.PI:0.82+this.psy.intelligence*0.32+
+      (this.temperament==='RUNNER'?0.22:0);
     const cosH=Math.cos(this.angle),sinH=Math.sin(this.angle);
     const closeR=this.size*2.4;
     const closeR2=closeR*closeR;
@@ -405,6 +701,7 @@ class Fish{
         if(dist<this.bestPreyD){this.bestPreyD=dist;this.bestPrey=f;}
       }else if(this._isAlly(f)){
         this._allyList.push(f);
+        if(this._isShoalMate(f))this._shoalMateList.push(f);
       }
     }
 
@@ -428,7 +725,10 @@ class Fish{
   classify(o){
     if(this.defSize()>=o.defSize()*CFG.SIZE_RATIO)return 'PREY';
     if(o.defSize()>=this.defSize()*CFG.SIZE_RATIO)return 'THREAT';
-    if(o.aggression()>0.7&&o.size>this.size*0.85)return 'THREAT';
+    // Similar-size members of a lineage are rivals/allies, not imaginary predators.
+    // Treating every aggressive neighbour as a threat made apex fish panic in packs.
+    if(o.lineageKey===this.lineageKey)return 'NEUTRAL';
+    if(o.aggression()>0.7&&o.defSize()>this.defSize()*1.08)return 'THREAT';
     return 'NEUTRAL';
   }
 
@@ -436,13 +736,196 @@ class Fish{
     if(f===this||!f.alive)return false;
     if(f.lineageKey!==this.lineageKey)return false;
     const r=f.size/Math.max(0.01,this.size);
-    return r>0.62&&r<1.6;
+    return r>0.66&&r<1.52;
+  }
+
+  _isShoalFish(){
+    return this.size<=CFG.SHOAL_MAX_SIZE;
+  }
+
+  _isShoalMate(f){
+    if(!this._isShoalFish()||!f||!f.alive||f===this)return false;
+    if(f.lineageKey!==this.lineageKey||!f._isShoalFish())return false;
+    const r=f.size/Math.max(0.001,this.size);
+    return r>=0.72&&r<=1.38;
   }
 
   /* =========================================================================
      DECISION BRAIN
      ========================================================================= */
+  _bestHuntStrategy(prey){
+    const d=prey?this._distTo(prey):this.visionRange;
+    const hunger=1-this.energy/this.maxEnergy;
+    const speed=prey&&prey.vel?Math.hypot(prey.vel.x,prey.vel.y):0;
+    const base={
+      AMBUSH:(1-this.psy.speedPreference)*0.45+this.psy.patience*0.55,
+      STALK:this.psy.patience*0.42+this.psy.intelligence*0.28,
+      INTERCEPT:speed/Math.max(1,this._spd())*0.65+this.psy.intelligence*0.35,
+      CHASE:this.psy.aggression*0.38+this.psy.speedPreference*0.32,
+      EXHAUST:(1-this.psy.patience)*0.25+(prey&&prey.stamina<CFG.STAM_MAX*0.45?0.65:0),
+      CORNER:this.psy.territoriality*0.35+(this._envRef&&this._envRef.props?0.2:0),
+      PACK:this.psy.sociality*0.38+(this._allyList.length>=2?0.55:0)
+    };
+    let best=this.huntStrategy,bestScore=-Infinity;
+    for(const key in base){
+      let score=base[key]+this._strategyReliability(key)*0.65;
+      score+=hunger*0.12-d/Math.max(1,this.visionRange)*0.08;
+      if(key==='CHASE'&&this.experience.huntsLost>this.experience.huntsWon)score-=0.25;
+      if(key==='AMBUSH'&&this.lineage.ambush)score+=0.35;
+      if(key==='PACK'&&this._allyList.length<2)score-=0.3;
+      if(score>bestScore){bestScore=score;best=key;}
+    }
+    return best;
+  }
+
+  _applyDecision(action,eco){
+    const priorAction=this._decisionAction;
+    const priorTarget=this.target;
+    this._decisionAction=action.key;
+    this._decisionCommitment=action.commitment||0.8;
+    if(action.key==='FLEE'){
+      this.state='FLEE';this.behavior='FLEE';this.target=this.bestThreat;
+      if(this.bestThreat)this.updateFleeDir(this.bestThreat,eco);
+      if(this.bestThreat&&this.shoal)this.shoal.reportThreat(this.bestThreat);
+      return;
+    }
+    if(action.key==='SCHOOL'){
+      this.state='SCHOOL';this.behavior='SCHOOL';return;
+    }
+    if(action.key==='HUNT'){
+      this.target=action.target||this.bestPrey;
+      if(!this.target)return;
+      const isNewHunt=priorAction!=='HUNT'||priorTarget!==this.target;
+      if(isNewHunt)this.huntStrategy=this._bestHuntStrategy(this.target);
+      const d=this._distTo(this.target);
+      const reach=(this.defSize()+this.target.defSize())*1.4;
+      if(d<reach)this.state='ATTACK';
+      else if(this.huntStrategy==='AMBUSH'||this.huntStrategy==='STALK')this.state='STALK';
+      else if(this.huntStrategy==='INTERCEPT')this.state='INTERCEPT';
+      else this.state='CHASE';
+      this.behavior='HUNT';
+      if(isNewHunt){
+        this.experience.huntsStarted++;this._huntStartedAt=this.age;
+        this._rememberEntity('prey',this.target,'hunt-start','pending',0.7,30,
+          {strategy:this.huntStrategy,relationship:'prey'});
+      }
+      return;
+    }
+    if(action.key==='DEFEND'){
+      this.target=action.target;this.state='ATTACK';this.behavior='DEFEND';return;
+    }
+    if(action.key==='REST'){
+      this.state='REST';this.behavior='REST';this.target=null;return;
+    }
+    if(action.key==='FOOD'||action.key==='SCAVENGE'){
+      this.state='SEEK_FOOD';this.behavior=action.key;this.bestFood=action.target||this.bestFood;
+      if(this.bestFood)this.wanderAngle=Math.atan2(this.bestFood.pos.y-this.pos.y,this.bestFood.pos.x-this.pos.x);
+      return;
+    }
+    if(action.key==='PATROL'||action.key==='RETURN'){
+      this.state=action.key;this.behavior='PATROL';return;
+    }
+    if(action.key==='INVESTIGATE'){
+      this.state='SEARCH';this.behavior='INVESTIGATE';
+      if(action.target)this.wanderAngle=Math.atan2(action.target.pos.y-this.pos.y,action.target.pos.x-this.pos.x);
+      return;
+    }
+    this.state='WANDER';this.behavior='WANDER';this.target=null;
+  }
+
   decide(dt,eco){
+    this._aiTick+=dt;
+    if(this._aiTick<this._aiInterval)return;
+    this._aiTick=0;
+    this._aiInterval=Math.max(0.07,0.16+Math.random()*0.09-this.psy.intelligence*0.05);
+    this.fear=Math.max(0,this.fear-0.14);
+    this.anger=Math.max(0,this.anger-0.10);
+    this._decisionCommitment=Math.max(0,(this._decisionCommitment||0)-this._aiInterval);
+    if(this._decisionAction==='HUNT'&&(!this.target||!this.target.alive||
+       (!this.perceived.has(this.target)&&this.targetMemory<=0))){
+      this.experience.huntsLost++;this._learn(this.huntStrategy,false);
+      if(this.target)this._rememberEntity('prey',this.target,'hunt-end','failed',0.8,52,
+        {strategy:this.huntStrategy,relationship:'elusive-prey'});
+      this.target=null;this._decisionAction=null;
+    }
+
+    const hunger=clamp(1-this.energy/this.maxEnergy,0,1);
+    const health=clamp(this.hp/this.maxHp,0,1);
+    const stamina=clamp(this.stamina/CFG.STAM_MAX,0,1);
+    const alarm=(this.shoal&&this.shoal.alarm)||this._heardAlarm;
+    const directDanger=this._threatUtility(this.bestThreat,this.bestThreatD);
+    const alarmDanger=alarm ? alarm.danger*alarm.confidence*(0.45+this.psy.sociality*0.35) : 0;
+    const danger=Math.max(directDanger,alarmDanger,this._memoryDanger(this.pos.x,this.pos.y,this.visionRange)*0.28);
+    let prey=this._choosePrey(eco);
+    // A committed hunter keeps its quarry unless the replacement is materially better.
+    if(this._decisionAction==='HUNT'&&this.target&&this.target.alive&&this.perceived.has(this.target)){
+      const oldEval=this._evaluatePrey(this.target,eco);
+      const candidateEval=prey?this._evaluatePrey(prey,eco):null;
+      const oldValue=oldEval.success*oldEval.reward-oldEval.cost-oldEval.risk;
+      const newValue=candidateEval?candidateEval.success*candidateEval.reward-candidateEval.cost-candidateEval.risk:-Infinity;
+      if(!candidateEval||prey===this.target||newValue<oldValue+0.22+this.psy.patience*0.12)prey=this.target;
+    }
+    const preyEval=prey?this._evaluatePrey(prey,eco):null;
+    const support=clamp(this._allyList.length/5,0,1);
+    const inShoal=this._maintainShoal(eco);
+    const current=this._decisionAction;
+    const actions=[];
+    const add=(key,score,target=null,commitment=0.8)=>{
+      const hysteresis=current===key?(this._decisionCommitment||0)*0.32:0;
+      actions.push({key,target,commitment,score:score+hysteresis});
+    };
+
+    // All drives are evaluated together. Scores are expected value, not a priority list.
+    const fleeUrgency=danger*(1.2+(1-health)*0.95+(1-stamina)*0.25+this.intent.escape)
+      *(this._isApex()?0.54:1.2-this.psy.bravery*0.42-this.psy.riskTolerance*0.18);
+    add('FLEE',fleeUrgency,this.bestThreat||(alarm&&alarm.threat),0.55);
+    if(directDanger>0.22&&this.bestThreat&&this._canCounter(this.bestThreat))
+      add('DEFEND',directDanger*(this.psy.bravery+this.psy.aggression*0.65+support*0.35),this.bestThreat,0.7);
+    add('SCHOOL',support*(this.psy.sociality*1.25+this.psy.intelligence*0.25+this.intent.social)
+      +(inShoal?0.52:0)-danger*0.35-(this._isApex()?0.65:0), null,1.8);
+    if(preyEval&&!this.injured){
+      const hungerDrive=hunger*(1.55-this.psy.hungerTolerance*0.45);
+      const huntValue=preyEval.success*preyEval.reward*(0.55+hungerDrive)
+        *(0.55+this.psy.aggression*0.8+this.psy.bravery*0.35+support*0.22)
+        -preyEval.cost-preyEval.risk*(1-this.psy.riskTolerance*0.65)
+        +this.intent.hunt+hunger*0.18+(this._isApex()?0.88:0);
+      add('HUNT',huntValue,prey,1.6+this.psy.patience*0.8);
+    }
+    add('REST',(1-stamina)*0.85+(1-health)*0.45-danger*0.08, null,1.3);
+    const foodTarget=this._findFood(eco);
+    if(foodTarget)add('FOOD',hunger*(0.9+(1-this.psy.hungerTolerance)*0.6)+(1-stamina)*0.18-danger*0.22,
+      foodTarget,1.0);
+    const corpse=eco&&eco.corpses&&eco.corpses.find(c=>!c.eaten);
+    if(corpse)add('SCAVENGE',hunger*0.65+(this.psy.riskTolerance<0.5?0.25:0)
+      -danger*0.22,corpse,1.1);
+    if(this.territory){
+      const homeD=Math.hypot(this.pos.x-this.territory.x,this.pos.y-this.territory.y);
+      add('RETURN',(homeD>this.territory.r?this.psy.territoriality*1.1:0.05)+danger*0.16+this.intent.territory,null,1.2);
+      add('PATROL',this.psy.territoriality*0.45+this.intent.territory+(this._isApex()?0.42:0)
+        -(preyEval&&this._isApex()?0.72:0)-danger*0.3,null,1.0);
+    }
+    const unknown=this.nearby.find(f=>this.perceived.get(f)==='NEUTRAL');
+    add('INVESTIGATE',this.psy.curiosity*0.75+this.psy.exploration*0.35-danger*0.5,unknown,0.9);
+    add('WANDER',0.22+this.psy.exploration*0.45+this.psy.patience*0.12-danger*0.25-(this.intent.hunt*0.22),null,0.7);
+
+    actions.sort((a,b)=>b.score-a.score);
+    let choice=actions[0];
+    const old=actions.find(a=>a.key===current);
+    if(old&&this._decisionCommitment>0&&choice.score<old.score+0.18)choice=old;
+    if(choice.key==='FLEE'){
+      this.experience.escapes++;
+      if(this.bestThreat)this._rememberEntity('danger',this.bestThreat,'alarm','active',1.1,28,
+        {dangerLevel:danger});
+      if(this.shoal)this.shoal.reportAlarm(this,this.bestThreat,danger);
+      for(const ally of this._allyList){
+        if(Math.hypot(ally.pos.x-this.pos.x,ally.pos.y-this.pos.y)<this.visionRange*0.72)
+          ally._receiveAlarm(this,this.bestThreat,danger);
+      }
+    }
+    this._applyDecision(choice,eco);
+  }
+
+  decideLegacy(dt,eco){
     this._aiTick+=dt;
     if(this._aiTick<this._aiInterval)return;
     this._aiTick=0;
@@ -478,6 +961,46 @@ class Fish{
       }
     }
 
+    if(this._isShoalFish()&&this.psy.sociality>0.30){
+      if(this.shoal&&!this.shoal._dead){
+        const d=Math.hypot(this.pos.x-this.shoal.center.x,this.pos.y-this.shoal.center.y);
+        if(d>this.visionRange*1.9&&this.psy.sociality<0.55){
+          this._leaveShoal('drift');
+        }else{
+          this.state='SCHOOL';this.behavior='SCHOOL';return;
+        }
+      }
+
+      if(!this.shoal&&this.shoalCooldown<=0&&this._shoalMateList.length){
+        let bestShoal=null,bestD=Infinity;
+        for(const mate of this._shoalMateList){
+          if(!mate.shoal||mate.shoal.members.length>=24)continue;
+          const d=this._distTo(mate);
+          if(d<bestD){bestD=d;bestShoal=mate.shoal;}
+        }
+        if(bestShoal&&bestShoal.accepts(this)){
+          bestShoal.add(this);
+          this.state='SCHOOL';this.behavior='SCHOOL';return;
+        }
+      }
+
+      if(!this.shoal&&this.shoalCooldown<=0
+         &&this._shoalMateList.length>=CFG.SHOAL_MIN_ALLIES){
+        const shoal=new Shoal(this.lineageKey);
+        shoal.add(this);
+        if(eco&&!eco.shoals)eco.shoals=[];
+        if(eco)eco.shoals.push(shoal);
+        for(const mate of this._shoalMateList){
+          if(!mate.shoal&&shoal.accepts(mate))shoal.add(mate);
+        }
+        this.state='SCHOOL';this.behavior='SCHOOL';return;
+      }
+
+      if(this._shoalMateList.length){
+        this.state='SCHOOL';this.behavior='SCHOOL';return;
+      }
+    }
+
     /* --- 2. CONTINUE EXISTING HUNT --------------------------------------- */
     if(this.target&&this.target.alive&&this.perceived.has(this.target)
        &&this.perceived.get(this.target)==='PREY'){
@@ -505,6 +1028,7 @@ class Fish{
     if(hunger>huntThreshold&&!this.injured){
       const prey=this._choosePrey(eco);
       if(prey){
+        this._leaveShoal('hunt');
         this.target=prey;
         this.lastKnown={x:prey.pos.x,y:prey.pos.y};
         this.targetMemory=CFG.MEMORY;
@@ -586,60 +1110,80 @@ class Fish{
     if(danger>0.4&&this.psy.intelligence>0.35)this.wanderAngle+=(Math.random()-0.5)*1.6;
   }
 
+  _leaveShoal(reason){
+    if(!this.shoal)return;
+    this.shoal.remove(this);
+    this.shoalCooldown=2+Math.random()*2;
+  }
+
   /* =========================================================================
      PREY SELECTION
      ========================================================================= */
-  _choosePrey(eco){
-    let best=null,bestScore=0;
-    const mySize=this.defSize();
-    const vis=this.visionRange;
-    const hunger=1-this.energy/this.maxEnergy;
+  _threatUtility(threat,distance){
+    if(!threat)return 0;
+    const gap=threat.defSize()/Math.max(1,this.defSize());
+    const proximity=clamp(1-(distance||this._distTo(threat))/Math.max(1,this.visionRange),0,1);
+    const known=this._entityKnowledge(threat);
+    return proximity*(0.5+gap*0.62+(threat.psy?threat.psy.aggression:0.5)*0.25
+      +(known?known.threat*0.3:0));
+  }
 
-    for(let i=0;i<this._preyList.length;i++){
-      const f=this._preyList[i];
-      const dx=f.pos.x-this.pos.x,dy=f.pos.y-this.pos.y;
-      const d=Math.hypot(dx,dy);
-      if(d>vis)continue;
+  _canCounter(threat){
+    const ratio=this.defSize()/Math.max(1,threat.defSize());
+    return ratio>0.72 && this.hp/this.maxHp>0.48 && this.stamina>CFG.STAM_MAX*0.24
+      && (this.psy.bravery+this.psy.aggression*0.45+this._allyList.length*0.08)>0.72;
+  }
 
-      let risk=0;
-      for(let j=0;j<this._threatList.length;j++){
-        const t=this._threatList[j];
-        const dt_=Math.hypot(f.pos.x-t.pos.x,f.pos.y-t.pos.y);
-        if(dt_<140)risk+=0.7*(1-dt_/140);
+  _evaluatePrey(f,eco){
+    const d=this._distTo(f), vis=Math.max(1,this.visionRange);
+    const fHp=f.maxHp?clamp(f.hp/f.maxHp,0,1):1;
+    const fStam=clamp((f.stamina===undefined?CFG.STAM_MAX:f.stamina)/CFG.STAM_MAX,0,1);
+    const theirSpeed=f.vel?Math.hypot(f.vel.x,f.vel.y):0;
+    const speedGap=this._spd()/Math.max(1,theirSpeed||f._spd&&f._spd()||1);
+    const known=this._entityKnowledge(f);
+    const type=this.knowledge.preyTypes.get(f.lineageKey);
+    const typeSuccess=type&&type.attempts?type.wins/type.attempts:0.5;
+    let nearbyAllies=0;
+    for(const n of this.nearby)if(n!==f&&this._isAlly(n) && Math.hypot(n.pos.x-f.pos.x,n.pos.y-f.pos.y)<90)nearbyAllies++;
+    const routeRisk=this._escapeRouteScore(f);
+    const terrain=this._envRef&&this._envRef.losBlocked?0.08:0;
+    const vulnerability=(1-fHp)*0.55+(1-fStam)*0.3+(f.injured?0.28:0);
+    const familiarity=known ? -known.escaped*0.08+((known.familiarity||0)*0.05) : 0;
+    const success=clamp(0.22+vulnerability+speedGap*0.2+(1-d/vis)*0.15+
+      this.psy.intelligence*0.18+typeSuccess*0.18+familiarity-routeRisk*0.3-nearbyAllies*0.07+terrain,0.03,0.97);
+    let predatorRisk=0;
+    for(const t of this._threatList)predatorRisk=Math.max(predatorRisk,this._threatUtility(t,Math.hypot(t.pos.x-f.pos.x,t.pos.y-f.pos.y))*0.7);
+    const reward=clamp(f.size/Math.max(1,this.size),0.18,1.5)*(0.65+vulnerability*0.5);
+    const cost=(d/vis)*0.55+Math.max(0,1-speedGap)*0.42+(1-this.stamina/CFG.STAM_MAX)*0.32;
+    return {success,reward,cost,risk:predatorRisk+routeRisk*0.22,distance:d};
+  }
+
+  _escapeRouteScore(f){
+    let score=0;
+    const a=f.vel?Math.atan2(f.vel.y,f.vel.x):0;
+    const aheadX=f.pos.x+Math.cos(a)*85,aheadY=f.pos.y+Math.sin(a)*85;
+    if(aheadX<70||aheadX>CFG.W-70||aheadY<70||aheadY>CFG.H-70)score-=0.18;
+    if(this._envRef&&this._envRef.props){
+      for(const p of this._envRef.props){
+        const d=Math.hypot(aheadX-p.x,aheadY-p.y);
+        if(p.blocks&&d<p.r+35)score-=0.2;
+        if(p.conceal&&d<p.r+55)score+=0.18;
       }
-      risk+=this._memoryDanger(f.pos.x,f.pos.y,140)*0.55;
-      const riskAversion=this.psy.riskTolerance*(1-hunger*0.4);
-
-      const distScore=1-d/vis;
-      const value=Math.min(f.defSize()/mySize*1.5,1.15);
-      const fHp=(f.hp!==undefined)?f.hp:(f.maxHp||100);
-      const fMaxHp=f.maxHp||100;
-      const fStam=(f.stamina!==undefined)?f.stamina:CFG.STAM_MAX;
-      const vuln=f.injured?0.7:(1-fHp/fMaxHp)*0.8;
-      const stam=1-fStam/CFG.STAM_MAX;
-      const allies=f.allyCount||0;
-      const isolated=1-Math.min(1,allies*0.22);
-      const foodInPrey=Math.min(1,f.size/Math.max(1,this.size));
-
-      let stratBonus=0;
-      if(this.huntStrategy==='AMBUSH'&&d<vis*0.5)stratBonus=0.35;
-      if(this.huntStrategy==='INTERCEPT'&&f.vel){
-        const spd=Math.hypot(f.vel.x,f.vel.y);
-        stratBonus=Math.min(0.4,spd*0.014);
-      }
-      if(this.huntStrategy==='PACK'&&this.allyCount>=2)stratBonus=0.3;
-      if(this.huntStrategy==='EXHAUST'&&fStam<CFG.STAM_MAX*0.4)stratBonus=0.4;
-
-      const hungerBoost=hunger>0.6?1.4:hunger>0.35?1.2:1.0;
-
-      const score=(distScore*2.0+value*1.5+vuln+stam*0.7+isolated*0.4+foodInPrey*0.5)
-                  *hungerBoost
-                  *(1-risk*riskAversion*0.8)
-                  +stratBonus;
-
-      if(score>bestScore){bestScore=score;best=f;}
     }
-    return bestScore>0.28?best:null;
+    return clamp(score+0.35,0,1);
+  }
+
+  _choosePrey(eco){
+    let best=null,score=-Infinity;
+    for(const f of this._preyList){
+      const e=this._evaluatePrey(f,eco);
+      const value=e.success*e.reward-e.cost-e.risk*(1-this.psy.riskTolerance*0.6);
+      if(value>score){score=value;best=f;}
+    }
+    // A dedicated hunter evaluates marginal prey rather than pretending it is absent;
+    // the drive scorer then decides whether the expected pursuit is worth taking.
+    const noticeThreshold=(this._isApex()||this.intent.hunt>0.2)?-0.42:0.04;
+    return score>noticeThreshold?best:null;
   }
 
   _findFood(eco){
@@ -666,49 +1210,31 @@ class Fish{
      FLEEING
      ========================================================================= */
   updateFleeDir(threat,eco){
-    let ax=0,ay=0;
-    const away=this._norm(this.pos.x-threat.pos.x,this.pos.y-threat.pos.y);
-    ax+=away.x*1.6;ay+=away.y*1.6;
-
-    for(let i=0;i<this._threatList.length;i++){
-      const f=this._threatList[i];
-      if(f===threat)continue;
-      const a2=this._norm(this.pos.x-f.pos.x,this.pos.y-f.pos.y);
-      ax+=a2.x*0.7;ay+=a2.y*0.7;
+    if(!threat||!threat.pos)return;
+    const awayA=Math.atan2(this.pos.y-threat.pos.y,this.pos.x-threat.pos.x);
+    const cover=this._findCover(eco&&eco.env,threat);
+    let best={score:-Infinity,a:awayA};
+    // Candidate escape routes: direct, lateral jukes, cover, allies, territory.
+    const candidates=[awayA,awayA+0.58,awayA-0.58,awayA+1.15,awayA-1.15];
+    if(cover)candidates.push(Math.atan2(cover.y-this.pos.y,cover.x-this.pos.x));
+    if(this._allyList.length){
+      const ally=this._allyList[0];candidates.push(Math.atan2(ally.pos.y-this.pos.y,ally.pos.x-this.pos.x));
     }
-
-    const m=CFG.EDGE;
-    if(this.pos.x<m)ax+=1-(this.pos.x/m);
-    if(this.pos.x>CFG.W-m)ax-=1-((CFG.W-this.pos.x)/m);
-    if(this.pos.y<m)ay+=1-(this.pos.y/m);
-    if(this.pos.y>CFG.H-m)ay-=1-((CFG.H-this.pos.y)/m);
-
-    for(let i=0;i<this.memory.length;i++){
-      const mm=this.memory[i];
-      if(mm.type!=='danger')continue;
-      const dd=Math.hypot(this.pos.x-mm.x,this.pos.y-mm.y);
-      if(dd<160&&dd>1){
-        const dir=this._norm(this.pos.x-mm.x,this.pos.y-mm.y);
-        const w=mm.strength*(1-dd/160)*0.9;
-        ax+=dir.x*w;ay+=dir.y*w;
+    if(this.territory)candidates.push(Math.atan2(this.territory.y-this.pos.y,this.territory.x-this.pos.x));
+    for(const a of candidates){
+      const px=this.pos.x+Math.cos(a)*90,py=this.pos.y+Math.sin(a)*90;
+      let score=Math.cos(a-awayA)*1.3;
+      score+=clamp(Math.min(px-10,CFG.W-10-px,py-10,CFG.H-10-py)/70,-1,1)*0.8;
+      for(const t of this._threatList){
+        const d=Math.hypot(px-t.pos.x,py-t.pos.y);score+=clamp(d/150,0,1)*0.55;
       }
+      if(cover)score+=Math.exp(-Math.hypot(px-cover.x,py-cover.y)/80)*(0.25+this.psy.intelligence*0.65);
+      if(this.psy.sociality>0.55&&this._allyList.length)score+=0.2;
+      score-=this._memoryDanger(px,py,130)*0.3;
+      if(score>best.score)best={score,a};
     }
-
-    if(eco&&eco.env&&this.psy.intelligence>0.35&&!this.injured){
-      const cover=this._findCover(eco.env,threat);
-      if(cover){
-        const dir=this._norm(cover.x-this.pos.x,cover.y-this.pos.y);
-        ax+=dir.x*0.9;ay+=dir.y*0.9;
-      }
-    }
-
-    let juke=(Math.random()-0.5)*0.35;
-    if(this.psy.intelligence>0.65)juke*=1.5;
-    if(this.injured)juke+=(Math.random()-0.5)*0.5;
-
-    const n=this._norm(ax,ay);
-    const jA=Math.atan2(n.y,n.x)+juke;
-    this.fleeDir={x:Math.cos(jA),y:Math.sin(jA)};
+    const juke=(this.psy.bravery<0.4||this.injured?0.24:0.1)*(Math.random()-0.5);
+    this.fleeDir={x:Math.cos(best.a+juke),y:Math.sin(best.a+juke)};
   }
 
   _findCover(env,threat){
@@ -748,8 +1274,18 @@ class Fish{
     const stFrac=this.stamina/CFG.STAM_MAX;
 
     if(st==='FLEE'||this.behavior==='FLEE'){
-      desX=this.fleeDir.x;desY=this.fleeDir.y;
-      spdMult=1.0+0.30*stFrac+this.psy.bravery*0.12;
+      const sh=this.shoal;
+      if(sh&&!sh._dead&&sh.fleeDir!==null){
+        const awayX=Math.cos(sh.fleeDir),awayY=Math.sin(sh.fleeDir);
+        let cx=sh.center.x-this.pos.x,cy=sh.center.y-this.pos.y;
+        const cd=Math.hypot(cx,cy)||1;cx/=cd;cy/=cd;
+        desX=awayX*1.55+cx*1.05;desY=awayY*1.55+cy*1.05;
+        const dm=Math.hypot(desX,desY)||1;desX/=dm;desY/=dm;
+        spdMult=1.2+0.30*stFrac+this.psy.bravery*0.1;
+      }else{
+        desX=this.fleeDir.x;desY=this.fleeDir.y;
+        spdMult=1.0+0.30*stFrac+this.psy.bravery*0.12;
+      }
       if(this.bestThreat&&this.bestThreatD<this.size*3.2)spdMult+=0.35;
     }
     else if(st==='CHASE'||st==='INTERCEPT'||st==='ATTACK'||st==='STALK'){
@@ -758,6 +1294,31 @@ class Fish{
         let tx=aim.x,ty=aim.y;
         if(st==='ATTACK'&&this.target&&this.target.alive){
           tx=this.target.pos.x;ty=this.target.pos.y;
+        }
+        const strategy=this.huntStrategy;
+        if(this.target&&this.target.alive&&strategy==='AMBUSH'){
+          // Wait ahead of the prey's path; a patient ambusher does not tail it.
+          const tv=this.target.vel||{x:0,y:0};
+          const lead=clamp(this._distTo(this.target)/Math.max(1,this._spd()),0.35,1.5);
+          tx=this.target.pos.x+tv.x*lead;ty=this.target.pos.y+tv.y*lead;
+          const d=this._distTo(this.target);
+          if(d<this.visionRange*0.28&&Math.abs(wrapA(Math.atan2(this.target.pos.y-this.pos.y,this.target.pos.x-this.pos.x)-this.angle))>0.7){
+            tx=this.pos.x;ty=this.pos.y; // remain concealed until an approach opens
+          }
+        }else if(this.target&&this.target.alive&&strategy==='STALK'){
+          const tv=this.target.vel||{x:0,y:0};
+          const behind=this._norm(-tv.x||this.pos.x-this.target.pos.x,-tv.y||this.pos.y-this.target.pos.y);
+          tx=this.target.pos.x+behind.x*(this.defSize()+this.target.defSize())*3.2;
+          ty=this.target.pos.y+behind.y*(this.defSize()+this.target.defSize())*3.2;
+        }else if(this.target&&this.target.alive&&strategy==='CORNER'){
+          const toEdgeX=this.target.pos.x<CFG.W/2?0:CFG.W;
+          const toEdgeY=this.target.pos.y<CFG.H/2?0:CFG.H;
+          tx=this.target.pos.x+(toEdgeX-this.target.pos.x)*0.42;
+          ty=this.target.pos.y+(toEdgeY-this.target.pos.y)*0.42;
+        }else if(this.target&&this.target.alive&&strategy==='PACK'&&this.shoal){
+          const members=this.shoal.members,rank=Math.max(0,members.indexOf(this));
+          const flank=(rank%3-1)*0.8, ta=Math.atan2(this.target.vel.y||0,this.target.vel.x||0)+Math.PI/2;
+          tx=this.target.pos.x+Math.cos(ta)*flank*55;ty=this.target.pos.y+Math.sin(ta)*flank*55;
         }
         const n=this._norm(tx-this.pos.x,ty-this.pos.y);
         desX=n.x;desY=n.y;
@@ -768,34 +1329,35 @@ class Fish{
       else if(st==='INTERCEPT')spdMult=1.30;
       else if(st==='CHASE')spdMult=1.15+this.psy.speedPreference*0.15;
       else if(st==='STALK')spdMult=0.55+(1-this.psy.patience)*0.28;
+      if(this.huntStrategy==='EXHAUST')spdMult=0.92+this.psy.patience*0.16;
+      if(this.huntStrategy==='CORNER')spdMult=1.06;
+      if(this.huntStrategy==='PACK')spdMult=1.02;
       if(this.lineage.ambush&&st==='STALK')spdMult*=0.65;
     }
     else if(st==='SCHOOL'){
-      let ax=0,ay=0,cx=0,cy=0,sxp=0,syp=0,n=0;
-      const allies=this._allyList;
-      for(let i=0;i<allies.length;i++){
-        const f=allies[i];
-        const d=Math.hypot(this.pos.x-f.pos.x,this.pos.y-f.pos.y);
-        if(d<0.5)continue;
-        const sepR=this.size*2.2+f.size*2.2;
-        if(d<sepR){
-          const sep=(sepR-d)/Math.max(1,sepR);
-          sxp+=(this.pos.x-f.pos.x)/d*sep*2.0;
-          syp+=(this.pos.y-f.pos.y)/d*sep*2.0;
+      const sh=this.shoal;
+      if(sh&&!sh._dead){
+        let cx=sh.center.x-this.pos.x,cy=sh.center.y-this.pos.y;
+        const cd=Math.hypot(cx,cy)||1;cx/=cd;cy/=cd;
+        const cohesionW=cd>sh.radius*0.55?1.75:0.85;
+        const alignX=Math.cos(sh.heading),alignY=Math.sin(sh.heading);
+        const driftX=Math.cos(sh.wanderAngle),driftY=Math.sin(sh.wanderAngle);
+        let sx=0,sy=0;
+        const personalR=this.size*2.6,personalR2=personalR*personalR;
+        for(const f of this._shoalMateList){
+          const dx=this.pos.x-f.pos.x,dy=this.pos.y-f.pos.y,d2=dx*dx+dy*dy;
+          if(d2>0.0001&&d2<personalR2){
+            const d=Math.sqrt(d2),w=(personalR-d)/personalR;
+            sx+=dx/d*w;sy+=dy/d*w;
+          }
         }
-        cx+=f.pos.x;cy+=f.pos.y;
-        if(f.vel){ax+=f.vel.x;ay+=f.vel.y;}
-        n++;
-      }
-      if(n>0){
-        cx=cx/n-this.pos.x;cy=cy/n-this.pos.y;
-        const cm=Math.hypot(cx,cy)||1;cx/=cm;cy/=cm;
-        const am=Math.hypot(ax,ay)||1;ax/=am;ay/=am;
-        desX=cx*0.55+ax*0.35+sxp*0.7;
-        desY=cy*0.55+ay*0.35+syp*0.7;
+        desX=cx*cohesionW+alignX*0.95+driftX*0.35+sx*1.05;
+        desY=cy*cohesionW+alignY*0.95+driftY*0.35+sy*1.05;
         const dm=Math.hypot(desX,desY)||1;
         desX/=dm;desY/=dm;
         spdMult=0.85+stFrac*0.1;
+        const shoalSpeed=Math.hypot(sh.vel.x,sh.vel.y);
+        if(shoalSpeed>20)spdMult+=Math.min(0.2,shoalSpeed*0.0009);
       }else{
         desX=Math.cos(this.wanderAngle);desY=Math.sin(this.wanderAngle);
         spdMult=0.9;
@@ -838,7 +1400,7 @@ class Fish{
     }
 
     // edges
-    const m=CFG.EDGE;
+    const m=Math.max(CFG.EDGE,this.size*CFG.EDGE_STEER_MUL);
     let bx=0,by=0;
     if(this.pos.x<m)bx+=1-this.pos.x/m;
     if(this.pos.x>CFG.W-m)bx-=1-(CFG.W-this.pos.x)/m;
@@ -884,8 +1446,7 @@ class Fish{
     this.knockX*=Math.exp(-dt*5);
     this.knockY*=Math.exp(-dt*5);
 
-    this.pos.x=clamp(this.pos.x,4,CFG.W-4);
-    this.pos.y=clamp(this.pos.y,4,CFG.H-4);
+    this._clampToWorld();
 
     if(this._envRef&&this._envRef.resolve){
       this._envRef.resolve(this.pos,this.size*0.85);
@@ -937,8 +1498,7 @@ class Fish{
     this.vel.x=Math.cos(this.angle)*spd;
     this.vel.y=Math.sin(this.angle)*spd;
     this.pos.x+=this.vel.x*dt;this.pos.y+=this.vel.y*dt;
-    this.pos.x=clamp(this.pos.x,4,CFG.W-4);
-    this.pos.y=clamp(this.pos.y,4,CFG.H-4);
+    this._clampToWorld();
 
     if(this._envRef&&this._envRef.resolve){
       this._envRef.resolve(this.pos,this.size*0.85);
@@ -963,7 +1523,8 @@ class Fish{
   _autoCombat(dt,eco){
     if(!this.target||!this.target.alive)return;
     if(!this.perceived.has(this.target))return;
-    if(this.perceived.get(this.target)!=='PREY')return;
+    const relation=this.perceived.get(this.target);
+    if(relation!=='PREY'&&!(this.behavior==='DEFEND'&&this._canCounter(this.target)))return;
 
     const dx=this.target.pos.x-this.pos.x,dy=this.target.pos.y-this.pos.y;
     const d=Math.hypot(dx,dy);
@@ -973,7 +1534,7 @@ class Fish{
     const a=Math.atan2(dy,dx);
     if(Math.abs(wrapA(a-this.angle))>Math.PI*0.6)return;
 
-    if(this.canEat(this.target)&&this.target.hp<=this.biteDmg*1.4){
+    if(relation==='PREY'&&this.canEat(this.target)&&this.target.hp<=this.biteDmg*1.4){
       this.eat(this.target,eco);
       return;
     }
@@ -1000,6 +1561,8 @@ class Fish{
     const dmg=this.biteDmg*(1+this.psy.aggression*0.35)*(1-(defMul-1)*0.35);
     if(typeof target.takeDamage==='function'){
       target.takeDamage(Math.max(2,dmg),this,eco);
+      this._rememberEntity('prey',target,'attack',target.alive?'hit':'killed',0.8,32,
+        {strategy:this.huntStrategy});
     }else{
       // fallback for compatibility — treat as instant kill if we can eat it
       if(this.canEat(target))target.die(eco,'eaten');
@@ -1025,8 +1588,13 @@ class Fish{
     this.injured=true;
     this.fear=Math.min(1.6,this.fear+0.5);
     this.lastAttacker=attacker||null;
+    this.experience.attacksReceived++;
 
-    if(attacker)this._remember('danger',attacker.pos.x,attacker.pos.y,1.0,28);
+    if(attacker){
+      this._remember('danger',attacker.pos.x,attacker.pos.y,1.0,28);
+      this._rememberEntity('danger',attacker,'attacked','negative',1.25,70,
+        {relationship:'attacker',dangerLevel:this._threatUtility(attacker,this._distTo(attacker))});
+    }
 
     if(eco){
       if(eco.spawnParticles)eco.spawnParticles(this.pos,6,'ai');
@@ -1048,6 +1616,13 @@ class Fish{
   die(eco,reason){
     if(!this.alive)return;
     this.alive=false;this.deathReason=reason;
+
+    if(this.behavior==='HUNT'||this._decisionAction==='HUNT'){
+      this.experience.huntsLost++;
+      this._learn(this.huntStrategy,false);
+      if(this.target)this._rememberEntity('prey',this.target,'hunt-end','failed',0.9,36,
+        {strategy:this.huntStrategy});
+    }
 
     if(eco&&eco.corpses&&reason!=='eaten'&&reason!=='aged'){
       eco.corpses.push({
@@ -1089,6 +1664,7 @@ class Fish{
     const eatStretch=this.feedTimer>0?1+this.feedTimer*1.6:1;
     const attackStretch=this._attackAnim>0?1+this._attackAnim*0.6:1;
     const waveScale=this.lineageKey==='serpent'?0.45:0.28;
+    const burstFactor=1+clamp(this.speedRatio()-0.55,-0.35,0.55)*0.4;
     for(let i=0;i<n;i++){
       const p=this.spine[i];
       const prev=this.spine[Math.max(0,i-1)];
@@ -1097,7 +1673,7 @@ class Fish{
       const d=Math.hypot(dx,dy)||1;dx/=d;dy/=d;
       const px=-dy,py=dx;
       const t=i/(n-1);
-      const waveAmp=this.size*waveScale*t*t*eatStretch*attackStretch;
+      const waveAmp=this.size*waveScale*t*t*eatStretch*attackStretch*burstFactor;
       const wave=Math.sin(this.swimPhase-t*Math.PI*2.4)*waveAmp;
       out.push({x:p.x+px*wave,y:p.y+py*wave});
     }
@@ -1111,13 +1687,20 @@ class Fish{
 
   eat(prey,eco){
     if(!prey||!prey.alive)return;
+    if(this._decisionAction==='HUNT'||this.behavior==='HUNT'){
+      this.experience.huntsWon++;
+      this._learn(this.huntStrategy,true);
+      this._rememberEntity('prey',prey,'hunt-end','success',1.2,48,
+        {strategy:this.huntStrategy});
+      this._decisionAction=null;
+    }
     prey.die(eco,'eaten');
     this.energy=Math.min(this.maxEnergy,this.energy+prey.size*CFG.EAT_ENERGY);
     this.grow(prey.size*CFG.EAT_GROWTH*eco.profile.growthMult);
     this.kills++;
     this.feedTimer=0.35;this.state='FEED';this.lungeTimer=0.15;
 
-    this._remember('kill',prey.pos.x,prey.pos.y,0.75,40);
+    this._rememberPlace('kill',prey.pos.x,prey.pos.y,0.75,40);
     this.fear=Math.max(0,this.fear-0.35);
     this.hp=Math.min(this.maxHp,this.hp+prey.size*0.6);
 
@@ -1140,12 +1723,17 @@ class Fish{
   eatFood(fd,eco){
     this.energy=Math.min(this.maxEnergy,this.energy+CFG.FOOD_NRJ);
     this.grow(CFG.FOOD_GROW*eco.profile.growthMult);
-    if(fd&&fd.pos)this._remember('food',fd.pos.x,fd.pos.y,0.5,60);
+    if(fd&&fd.pos)this._rememberPlace('food',fd.pos.x,fd.pos.y,0.5,60);
     if(eco&&eco.spawnParticles)eco.spawnParticles(fd.pos,2,'ai');
   }
 
   grow(a){
-    this.size+=a;
+    if(a>0&&this.size<CFG.MAX_SIZE){
+      const t=clamp(this.size/CFG.MAX_SIZE,0,1);
+      const taper=Math.max(CFG.GROWTH_TAPER_FLOOR,
+        Math.pow(1-t,CFG.GROWTH_TAPER_POW));
+      this.size=Math.min(CFG.MAX_SIZE,this.size+a*taper);
+    }
     this.maxEnergy=100+this.size*10;
     const newMaxHp=60+this.size*14;
     if(newMaxHp>this.maxHp)this.hp+=(newMaxHp-this.maxHp)*0.5;
