@@ -1,0 +1,132 @@
+[
+  {
+    "roomId": "ocean-1",
+    "playerId": "SaTI7uSa6nIg3A1cAAAA",
+    "lineage": "predator",
+    "kills": 0,
+    "size": 8,
+    "coins": 0,
+    "runId": "ocean-1:SaTI7uSa6nIg3A1cAAAA:50",
+    "duration_seconds": 0
+  },
+  {
+    "roomId": "ocean-3",
+    "playerId": "q3HfnEIzEvfcSED7AAAE",
+    "lineage": "predator",
+    "kills": 0,
+    "size": 8.3,
+    "coins": 0,
+    "runId": "ocean-3:q3HfnEIzEvfcSED7AAAE:8799",
+    "duration_seconds": 8
+  },
+  {
+    "roomId": "ocean-3",
+    "playerId": "QClcHG8qg1T0qGUjAAAH",
+    "lineage": "abyss",
+    "kills": 1,
+    "size": 9.7,
+    "coins": 1,
+    "runId": "ocean-3:QClcHG8qg1T0qGUjAAAH:123049",
+    "duration_seconds": 123
+  },
+  {
+    "roomId": "ocean-3",
+    "playerId": "cWmBlT63Lsf2FoftAAAI",
+    "lineage": "abyss",
+    "kills": 0,
+    "size": 8.3,
+    "coins": 0,
+    "runId": "ocean-3:cWmBlT63Lsf2FoftAAAI:174950",
+    "duration_seconds": 174
+  },
+  {
+    "roomId": "ocean-3",
+    "playerId": "p2SNXExq7O0bt6LIAAAJ",
+    "lineage": "armor",
+    "kills": 0,
+    "size": 8.4,
+    "coins": 0,
+    "runId": "ocean-3:p2SNXExq7O0bt6LIAAAJ:319100",
+    "duration_seconds": 319
+  },
+  {
+    "roomId": "ocean-3",
+    "playerId": "YCruFHWd1WjXj5BbAAAK",
+    "lineage": "swift",
+    "kills": 0,
+    "size": 8.2,
+    "coins": 0,
+    "runId": "ocean-3:YCruFHWd1WjXj5BbAAAK:354250",
+    "duration_seconds": 354
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "w_CHauy4I6m8fNE7AAAO",
+    "lineage": "armor",
+    "kills": 2,
+    "size": 10.6,
+    "coins": 2,
+    "runId": "ocean-7:w_CHauy4I6m8fNE7AAAO:12550",
+    "duration_seconds": 12
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "GVnR2mtzH6Y_5B2TAAAP",
+    "lineage": "abyss",
+    "kills": 2,
+    "size": 10.4,
+    "coins": 2,
+    "runId": "ocean-7:GVnR2mtzH6Y_5B2TAAAP:26750",
+    "duration_seconds": 26
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "jbqcYGs3miB2klVHAAAQ",
+    "lineage": "serpent",
+    "kills": 0,
+    "size": 8.1,
+    "coins": 0,
+    "runId": "ocean-7:jbqcYGs3miB2klVHAAAQ:30550",
+    "duration_seconds": 30
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "zd-M_027XveB7g2-AAAR",
+    "lineage": "swift",
+    "kills": 0,
+    "size": 8,
+    "coins": 0,
+    "runId": "ocean-7:zd-M_027XveB7g2-AAAR:38099",
+    "duration_seconds": 38
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "pqSsTEnJDrjsGi8-AAAS",
+    "lineage": "swift",
+    "kills": 0,
+    "size": 8.8,
+    "coins": 0,
+    "runId": "ocean-7:pqSsTEnJDrjsGi8-AAAS:107299",
+    "duration_seconds": 107
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "aQW1_cpm_C7WqNgtAAAU",
+    "lineage": "serpent",
+    "kills": 0,
+    "size": 8.2,
+    "coins": 0,
+    "runId": "ocean-7:aQW1_cpm_C7WqNgtAAAU:127949",
+    "duration_seconds": 127
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "Dn04V_Xo2VYrJxYtAAAT",
+    "lineage": "predator",
+    "kills": 1,
+    "size": 9.5,
+    "coins": 1,
+    "runId": "ocean-7:Dn04V_Xo2VYrJxYtAAAT:142249",
+    "duration_seconds": 142
+  }
+]

@@ -8,7 +8,7 @@ const FOOD_VIEW_RADIUS=1500;
 class GameRoom{
   constructor(id,runtime,persistence){
     this.id=id;this.runtime=runtime;this.persistence=persistence;
-    this.clients=new Map();this.botSerial=0;this.time=0;
+    this.clients=new Map();this.botSerial=0;this.time=0;this.snapshotSeq=0;
     this.profile={startStage:0,skin:null,energyMult:1,growthMult:1,coinMult:1};
     this.eco=new runtime.Eco(this.profile);
     this.eco.reset("predator");
@@ -51,7 +51,7 @@ class GameRoom{
       getDir(){return{x:this.x,y:this.y};},dash(){return this._dash;},bite(){return this._bite;}};
     this.eco.fish.push(fish);
     if(!this.eco.player)this.eco.player=fish;
-    this.clients.set(socket.id,{socket,fish,joinedAt:this.time});
+    this.clients.set(socket.id,{socket,fish,joinedAt:this.time,lastInputSeq:-1});
     this._refreshSimulationPlayer();
     socket.join(this.id);
     socket.emit("room:joined",{roomId:this.id,playerId:socket.id,tickMs:TICK_MS});
@@ -75,6 +75,8 @@ class GameRoom{
 
   receiveInput(socketId,input){
     const entry=this.clients.get(socketId);if(!entry||!input)return;
+    if(Number.isInteger(input.seq)&&input.seq<=entry.lastInputSeq)return;
+    if(Number.isInteger(input.seq))entry.lastInputSeq=input.seq;
     const x=Number(input.x),y=Number(input.y);
     entry.fish.netInput.x=Number.isFinite(x)?Math.max(-1,Math.min(1,x)):0;
     entry.fish.netInput.y=Number.isFinite(y)?Math.max(-1,Math.min(1,y)):0;
@@ -84,9 +86,13 @@ class GameRoom{
 
   tick(){
     this.time+=TICK_MS/1000;
+    this.snapshotSeq++;
     this._refreshSimulationPlayer();
     const previous=new Map();
-    for(const fish of this.eco.fish)previous.set(fish._netId,{x:fish.pos.x,y:fish.pos.y,kills:fish.kills,coins:fish.coinsEarned,size:fish.size,stage:fish.stage,alive:fish.alive});
+    for(const fish of this.eco.fish){
+      fish._foodEvents=[];
+      previous.set(fish._netId,{x:fish.pos.x,y:fish.pos.y,kills:fish.kills,coins:fish.coinsEarned,size:fish.size,stage:fish.stage,alive:fish.alive});
+    }
     this.eco.update(TICK_MS/1000);
     const events=[];
     const currentIds=new Set();
@@ -94,7 +100,13 @@ class GameRoom{
       currentIds.add(fish._netId);
       const old=previous.get(fish._netId);
       if(!old)continue;
-      if(fish.kills>old.kills)events.push({type:"eat",id:fish._netId,playerId:fish.isPlayer?fish._netId:null,coins:fish.coinsEarned-old.coins,x:fish.pos.x,y:fish.pos.y});
+      if(fish.kills>old.kills){
+        const eatPos=fish._lastEatPos||fish.pos;
+        events.push({type:"eat",id:fish._netId,playerId:fish.isPlayer?fish._netId:null,
+          coins:fish.coinsEarned-old.coins,size:fish.size,x:eatPos.x,y:eatPos.y});
+        fish._lastEatPos=null;
+      }
+      for(const food of fish._foodEvents||[])events.push({type:"food",id:fish._netId,x:food.x,y:food.y});
       if(fish.stage>old.stage)events.push({type:"evolve",id:fish._netId,stage:fish.stage,x:fish.pos.x,y:fish.pos.y});
     }
     for(const [id,old] of previous){
@@ -103,7 +115,9 @@ class GameRoom{
     for(const [playerId,entry] of this.clients){
       if(entry.fish.alive)continue;
       const result={roomId:this.id,playerId,lineage:entry.fish.lineageKey,kills:entry.fish.kills,
-        size:+entry.fish.size.toFixed(1),duration_seconds:Math.floor(this.time)};
+        size:+entry.fish.size.toFixed(1),coins:entry.fish.coinsEarned,
+        runId:`${this.id}:${playerId}:${Math.floor(this.time*1000)}`,
+        duration_seconds:Math.floor(this.time)};
       entry.socket.emit("player:eliminated",result);
       this.persistence.recordRun(result);
       this.clients.delete(playerId);
@@ -132,7 +146,7 @@ class GameRoom{
       const dx=item.pos.x-origin.x,dy=item.pos.y-origin.y;
       if(dx*dx+dy*dy<=FOOD_VIEW_RADIUS*FOOD_VIEW_RADIUS)food.push({pos:{x:item.pos.x,y:item.pos.y},r:item.r,phase:item.phase});
     }
-    socket.emit("world:snapshot",{time:+this.time.toFixed(2),fish,food,events});
+    socket.emit("world:snapshot",{seq:this.snapshotSeq,time:+this.time.toFixed(2),fish,food,events});
   }
 
   dispose(){clearInterval(this.timer);}

@@ -1,5 +1,7 @@
 ﻿"use strict";
 
+const GS=Object.freeze({MENU:'MENU',SHOP:'SHOP',PLAYING:'PLAYING',ONLINE:'ONLINE',OVER:'OVER'});
+
 class Game{
   constructor(){
     window.game=this;
@@ -14,6 +16,8 @@ class Game{
     this.playerLineage='predator';
     this.running=false;
     this.online=false;
+    this.state=GS.MENU;
+    this._paused=false;
     this._networkFish=new Map();
     this.multiplayer=typeof MultiplayerClient!=="undefined"?new MultiplayerClient(this):null;
     this.shopTab='skins';
@@ -51,25 +55,25 @@ class Game{
       oBest:document.getElementById('oBest'),
     };
     this.bannerTimer=0;this.toastTimer=0;
+    this._toastQueue=[];this._activity=[];
 
     this.buildShopTabs();
 
-    document.getElementById('startBtn').addEventListener('click',()=>this.startRun());
     document.getElementById('onlineBtn').addEventListener('click',()=>this.startOnline());
     document.getElementById('openShop').addEventListener('click',()=>this.openShop());
     document.getElementById('closeShop').addEventListener('click',()=>this.showStart());
-    document.getElementById('restartBtn').addEventListener('click',()=>this.startRun());
+    document.getElementById('restartBtn').addEventListener('click',()=>this.startOnline());
     document.getElementById('shopFromOver').addEventListener('click',()=>this.openShop());
 
     window.addEventListener('keydown',e=>{
       const k=e.key.toLowerCase();
       if(this.el.start.classList.contains('on')){
-        if(k==='enter'||k===' '){e.preventDefault();this.startRun();}
+        if(k==='enter'||k===' '){e.preventDefault();this.startOnline();}
         else if(k==='s')this.openShop();
       } else if(this.el.shop.classList.contains('on')){
         if(k==='escape'||k==='s')this.showStart();
       } else if(this.el.over.classList.contains('on')){
-        if(k==='r'||k==='enter'||k===' '){e.preventDefault();this.startRun();}
+        if(k==='r'||k==='enter'||k===' '){e.preventDefault();this.startOnline();}
         else if(k==='s')this.openShop();
       } else if(this.running){
         /* ============================================
@@ -85,9 +89,24 @@ class Game{
 
     this.renderer.fit();
     window.addEventListener('resize',()=>this.renderer.fit());
+    document.addEventListener('visibilitychange',()=>{this._paused=document.hidden;});
 
     this.refreshStartCoins();
     requestAnimationFrame(t=>this.loop(t));
+  }
+
+  _setState(next){
+    if(this.state===next)return;
+    const previous=this.state;
+    this.state=next;
+    this.running=next===GS.PLAYING||next===GS.ONLINE;
+    this.online=next===GS.ONLINE;
+    this.el.start.classList.toggle('on',next===GS.MENU);
+    this.el.shop.classList.toggle('on',next===GS.SHOP);
+    this.el.over.classList.toggle('on',next===GS.OVER);
+    this.el.banner.style.opacity='0';this.bannerTimer=0;
+    if(previous===GS.ONLINE&&next!==GS.ONLINE&&this.multiplayer)this.multiplayer.leave();
+    if(previous===GS.ONLINE&&next!==GS.ONLINE)this._networkFish.clear();
   }
 
   buildShopTabs(){
@@ -108,12 +127,9 @@ class Game{
   }
 
   showScreen(name){
-    this.el.start.classList.remove('on');
-    this.el.shop.classList.remove('on');
-    this.el.over.classList.remove('on');
-    if(name==='start')this.el.start.classList.add('on');
-    if(name==='shop')this.el.shop.classList.add('on');
-    if(name==='over')this.el.over.classList.add('on');
+    if(name==='start')this._setState(GS.MENU);
+    else if(name==='shop')this._setState(GS.SHOP);
+    else if(name==='over')this._setState(GS.OVER);
   }
 
   quitToMenu(){
@@ -131,7 +147,6 @@ class Game{
   }
 
   showStart(){
-    this.running=false;
     this.showScreen('start');
     this.el.banner.style.opacity='0';
     this.bannerTimer=0;
@@ -139,7 +154,6 @@ class Game{
   }
 
   openShop(){
-    this.running=false;
     this.showScreen('shop');
     this.refreshStartCoins();
     this.renderShop();
@@ -169,20 +183,22 @@ class Game{
       this.online=true;this._networkFish.clear();
       this.eco.fish.length=0;this.eco.food.length=0;this.eco.particles.length=0;
       this.eco.shockwaves.length=0;this.eco.shoals.length=0;this.eco.player=null;
-      this.eco.time=0;this.showScreen(null);this.running=true;
+      this.eco.time=0;this._setState(GS.ONLINE);
       this.multiplayer.start();
       this.showToast(`ONLINE · ${info.roomId.toUpperCase()} · ${this.playerLineage.toUpperCase()}`);
     }).catch(error=>this.showToast(error.message));
   }
 
   applyMultiplayerSnapshot(snapshot,playerId){
+    if(!snapshot||!Array.isArray(snapshot.fish))return;
     const seen=new Set();
     for(const data of snapshot.fish){
+      if(!data||data.id==null)continue;
       seen.add(data.id);
       let fish=this._networkFish.get(data.id);
       if(!fish){
         fish=new Fish(data.x,data.y,data.size,data.lineage,data.id===playerId);
-        fish._netId=data.id;fish.spawnTimer=0;this._networkFish.set(data.id,fish);
+        fish._netId=data.id;fish.spawnTimer=0.5;this._networkFish.set(data.id,fish);
       }
       fish.isPlayer=data.id===playerId;fish.isNetworkPlayer=!!data.isPlayer&&!fish.isPlayer;
       fish.lineageKey=data.lineage;fish.lineage=LINEAGES[data.lineage]||LINEAGES.predator;
@@ -207,13 +223,19 @@ class Game{
       const pos={x:event.x,y:event.y};
       if(event.type==='eat'){
         const fish=this._networkFish.get(event.id);
-        if(fish){fish.feedTimer=0.35;fish._attackAnim=0.25;}
+        if(fish){
+          fish.feedTimer=0.35;fish._attackAnim=0.25;
+          if(event.size)fish.size=Math.max(fish.size,event.size);
+          fish.updateSpine();
+        }
         this.eco.spawnParticles(pos,event.playerId===playerId?12:8,event.playerId===playerId?'player':'ai');
         this.eco.spawnShockwave(pos,Math.max(12,fish?fish.size*1.8:18));
         if(event.playerId===playerId)this.eco.spawnCoinPopup(pos,event.coins||1);
       }else if(event.type==='death'){
         this.eco.spawnParticles(pos,8,'ai');
         this.eco.spawnShockwave(pos,18);
+      }else if(event.type==='food'){
+        this.eco.spawnParticles(pos,2,'food');
       }else if(event.type==='evolve'){
         const fish=this._networkFish.get(event.id);
         if(fish)fish.evolveAnim=CFG.EVO_DUR;
@@ -228,8 +250,9 @@ class Game{
     item.className='activityItem';
     item.textContent=message;
     this.el.activityFeed.prepend(item);
+    this._activity.push({node:item,life:5});
     while(this.el.activityFeed.children.length>4)this.el.activityFeed.lastElementChild.remove();
-    setTimeout(()=>item.remove(),5000);
+    while(this._activity.length>4)this._activity.shift().node.remove();
   }
 
   playerJoined(info){
@@ -245,7 +268,11 @@ class Game{
   onlineEliminated(result){
     if(!this.online)return;
     const p=this.eco.player;
-    if(p){p.kills=result.kills;p.size=result.size;p.deathReason='killed';}
+    if(p){
+      p.kills=result.kills;p.size=result.size;p.deathReason='killed';
+      p.coinsEarned=Number(result.coins)||p.coinsEarned||0;
+      this.eco.pendingCoins=p.coinsEarned;
+    }
     this.showToast('ELIMINATED');
     this.gameOver();
     this.online=false;
@@ -264,6 +291,8 @@ class Game{
   }
 
   showToast(msg){
+    if(!msg)return;
+    if(this.toastTimer>0){this._toastQueue.push(msg);return;}
     this.el.toast.textContent=msg;
     this.el.toast.style.opacity='1';
     this.toastTimer=2.2;
@@ -417,7 +446,7 @@ class Game{
   loop(t){
     const dt=Math.min((t-this.last)/1000,0.05);
     this.last=t;
-    if(this.running){
+    if(!this._paused&&this.running){
       if(this.online&&this.multiplayer)this.multiplayer.update(dt);
       else this.eco.update(dt);
       this.renderer.render();
@@ -425,7 +454,15 @@ class Game{
     }
     if(this.toastTimer>0){
       this.toastTimer-=dt;
-      if(this.toastTimer<=0)this.el.toast.style.opacity='0';
+      if(this.toastTimer<=0){
+        this.el.toast.style.opacity='0';
+        const next=this._toastQueue.shift();
+        if(next){this.el.toast.textContent=next;this.el.toast.style.opacity='1';this.toastTimer=2.2;}
+      }
+    }
+    for(let i=this._activity.length-1;i>=0;i--){
+      this._activity[i].life-=dt;
+      if(this._activity[i].life<=0){this._activity[i].node.remove();this._activity.splice(i,1);}
     }
     requestAnimationFrame(tt=>this.loop(tt));
   }
