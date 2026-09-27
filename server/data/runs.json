@@ -128,5 +128,15 @@
     "coins": 1,
     "runId": "ocean-7:Dn04V_Xo2VYrJxYtAAAT:142249",
     "duration_seconds": 142
+  },
+  {
+    "roomId": "ocean-7",
+    "playerId": "s1qhbEkLkTXWJnGFAAAG",
+    "lineage": "swift",
+    "kills": 0,
+    "size": 8.1,
+    "coins": 0,
+    "runId": "ocean-7:s1qhbEkLkTXWJnGFAAAG:1600",
+    "duration_seconds": 1
   }
 ]
