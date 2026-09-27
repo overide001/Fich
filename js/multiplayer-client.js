@@ -6,6 +6,8 @@ class MultiplayerClient{
     this._connected=false;this._intentionalClose=false;this._joinCancel=null;
     this._sendClock=0;this._inputSeq=0;this._pendingSnapshot=null;
     this._lastSnapshotSeq=-1;this._lastSnapshotTime=0;this._snapshotInterval=0.05;
+    /* ---- Gate: snapshots are only forwarded to the game after start() ---- */
+    this._started=false;
   }
 
   join(lineage){
@@ -13,6 +15,7 @@ class MultiplayerClient{
     if(this.socket)this.leave();
     this.lineage=lineage;this._intentionalClose=false;this._pendingSnapshot=null;
     this._lastSnapshotSeq=-1;this._lastSnapshotTime=0;this._inputSeq=0;this._sendClock=0;
+    this._started=false;
     return new Promise((resolve,reject)=>{
       let settled=false;
       const timeout=setTimeout(()=>settle(new Error("Could not reach the multiplayer server.")),6000);
@@ -62,14 +65,22 @@ class MultiplayerClient{
       }
       this._lastSnapshotTime=now;this._lastSnapshotSeq=rawSeq;
     }
-    if(this.game.online)this.game.applyMultiplayerSnapshot(snapshot,this.playerId);
-    else this._pendingSnapshot=snapshot;
+    /* ---- Never forward to the game until the controller has finished its
+            synchronous reset work and called start(). Until then, only the
+            latest snapshot is retained and applied once start() is invoked. ---- */
+    if(this._started&&this.game.online){
+      this.game.applyMultiplayerSnapshot(snapshot,this.playerId);
+    } else {
+      this._pendingSnapshot=snapshot;
+    }
   }
 
   start(){
+    this._started=true;
     if(this._pendingSnapshot){
-      this.game.applyMultiplayerSnapshot(this._pendingSnapshot,this.playerId);
+      const snap=this._pendingSnapshot;
       this._pendingSnapshot=null;
+      this.game.applyMultiplayerSnapshot(snap,this.playerId);
     }
   }
 
@@ -126,6 +137,7 @@ class MultiplayerClient{
     this.socket=null;this._connected=false;this.playerId=null;this.roomId=null;
     this._sendClock=0;this._inputSeq=0;this._pendingSnapshot=null;
     this._lastSnapshotSeq=-1;this._lastSnapshotTime=0;this._snapshotInterval=0.05;
+    this._started=false;
   }
 
   isConnected(){return this._connected===true&&this.socket!==null&&this.socket.connected===true;}

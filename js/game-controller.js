@@ -181,12 +181,22 @@ class Game{
     this.showToast('CONNECTING TO OCEAN...');
     this.multiplayer.join(this.playerLineage).then(info=>{
       this.online=true;this._networkFish.clear();
+      /* ---- Defensive: guarantee plain mutable arrays before clearing ---- */
+      if(!Array.isArray(this.eco.fish))this.eco.fish=[];
+      if(!Array.isArray(this.eco.food))this.eco.food=[];
+      if(!Array.isArray(this.eco.particles))this.eco.particles=[];
+      if(!Array.isArray(this.eco.shockwaves))this.eco.shockwaves=[];
+      if(!Array.isArray(this.eco.shoals))this.eco.shoals=[];
       this.eco.fish.length=0;this.eco.food.length=0;this.eco.particles.length=0;
       this.eco.shockwaves.length=0;this.eco.shoals.length=0;this.eco.player=null;
       this.eco.time=0;this._setState(GS.ONLINE);
       this.multiplayer.start();
       this.showToast(`ONLINE · ${info.roomId.toUpperCase()} · ${this.playerLineage.toUpperCase()}`);
-    }).catch(error=>this.showToast(error.message));
+    }).catch(error=>{
+      /* ---- Expose the real error in DevTools, then show the toast ---- */
+      console.error(error);
+      this.showToast(error&&error.message?error.message:String(error));
+    });
   }
 
   applyMultiplayerSnapshot(snapshot,playerId){
@@ -214,7 +224,9 @@ class Game{
     for(const [id] of this._networkFish)if(!seen.has(id))this._networkFish.delete(id);
     this.eco.fish=Array.from(this._networkFish.values());
     this.eco.player=this._networkFish.get(playerId)||null;
-    this.eco.food=snapshot.food;this.eco.time=snapshot.time;
+    /* ---- Defensive: snapshot.food may be omitted or not an array ---- */
+    this.eco.food=Array.isArray(snapshot.food)?snapshot.food:[];
+    this.eco.time=snapshot.time;
     this.applyMultiplayerEvents(snapshot.events||[],playerId);
   }
 
@@ -492,4 +504,3 @@ class Game{
 }
 
 window.addEventListener('load',()=>new Game());
-

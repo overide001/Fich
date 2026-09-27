@@ -48,6 +48,11 @@
       this.coinPops   = [];
       this.corpses    = [];
 
+      // Legacy compatibility: game-controller still clears this.
+      // Eco v3 removed the Shoal system, but startOnline() still does:
+      // this.eco.shoals.length = 0;
+      this.shoals     = [];
+
       this.input  = null;
       this.player = null;
 
@@ -91,6 +96,9 @@
       this.shockwaves.length = 0;
       this.coinPops.length   = 0;
       this.corpses.length    = 0;
+
+      // Legacy compatibility: game-controller still clears this.
+      this.shoals.length     = 0;
 
       for(let i = 0; i < this._cellN; i++){
         this._fishGrid[i].length = 0;

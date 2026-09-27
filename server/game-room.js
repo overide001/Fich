@@ -129,24 +129,72 @@ class GameRoom{
 
   sendSnapshot(socket,events=[]){
     const entry=this.clients.get(socket.id);if(!entry)return;
+    if(!entry.fish||!entry.fish.pos)return;
     const origin=entry.fish.pos;
+    if(!Number.isFinite(origin.x)||!Number.isFinite(origin.y))return;
+
+    /* Snapshot source arrays defensively so the emitted payload is always
+       shaped as {fish:[...], food:[...], events:[...]}. */
+    const sourceFish=Array.isArray(this.eco.fish)?this.eco.fish:[];
+    const sourceFood=Array.isArray(this.eco.food)?this.eco.food:[];
+    const safeEvents=Array.isArray(events)?events:[];
+
+    /* All numeric fields are pushed through safeNum() so JSON serialization
+       can never turn a non-finite number into `null` for the client. */
+    const safeNum=(v,fallback=0)=>Number.isFinite(v)?v:fallback;
+
     const fish=[];
-    for(const f of this.eco.fish){
-      if(!f.alive)continue;
-      const dx=f.pos.x-origin.x,dy=f.pos.y-origin.y;
+    for(const f of sourceFish){
+      if(!f||!f.alive)continue;
+      const fx=safeNum(f.pos&&f.pos.x);
+      const fy=safeNum(f.pos&&f.pos.y);
+      const dx=fx-origin.x,dy=fy-origin.y;
       if(f!==entry.fish&&!f.isPlayer&&dx*dx+dy*dy>VIEW_RADIUS*VIEW_RADIUS)continue;
-      fish.push({id:f._netId,x:+f.pos.x.toFixed(2),y:+f.pos.y.toFixed(2),vx:+f.vel.x.toFixed(2),
-        vy:+f.vel.y.toFixed(2),angle:+f.angle.toFixed(4),size:+f.size.toFixed(2),
-        lineage:f.lineageKey,stage:f.stage,energy:+f.energy.toFixed(2),maxEnergy:+f.maxEnergy.toFixed(2),
-        stamina:+f.stamina.toFixed(2),hp:+f.hp.toFixed(2),maxHp:+f.maxHp.toFixed(2),kills:f.kills,
-        coinsEarned:f.coinsEarned,state:f.state,isPlayer:f.isPlayer,alive:f.alive});
+      fish.push({
+        id:f._netId||"unknown",
+        x:+fx.toFixed(2),
+        y:+fy.toFixed(2),
+        vx:+safeNum(f.vel&&f.vel.x).toFixed(2),
+        vy:+safeNum(f.vel&&f.vel.y).toFixed(2),
+        angle:+safeNum(f.angle).toFixed(4),
+        size:+safeNum(f.size).toFixed(2),
+        lineage:f.lineageKey||"predator",
+        stage:safeNum(f.stage,1),
+        energy:+safeNum(f.energy).toFixed(2),
+        maxEnergy:+safeNum(f.maxEnergy,100).toFixed(2),
+        stamina:+safeNum(f.stamina).toFixed(2),
+        hp:+safeNum(f.hp).toFixed(2),
+        maxHp:+safeNum(f.maxHp).toFixed(2),
+        kills:safeNum(f.kills,0),
+        coinsEarned:safeNum(f.coinsEarned,0),
+        state:f.state||"swim",
+        isPlayer:!!f.isPlayer,
+        alive:!!f.alive,
+      });
     }
+
     const food=[];
-    for(const item of this.eco.food){
-      const dx=item.pos.x-origin.x,dy=item.pos.y-origin.y;
-      if(dx*dx+dy*dy<=FOOD_VIEW_RADIUS*FOOD_VIEW_RADIUS)food.push({pos:{x:item.pos.x,y:item.pos.y},r:item.r,phase:item.phase});
+    for(const item of sourceFood){
+      if(!item||!item.pos)continue;
+      const ix=safeNum(item.pos.x);
+      const iy=safeNum(item.pos.y);
+      const dx=ix-origin.x,dy=iy-origin.y;
+      if(dx*dx+dy*dy<=FOOD_VIEW_RADIUS*FOOD_VIEW_RADIUS){
+        food.push({
+          pos:{x:ix,y:iy},
+          r:safeNum(item.r,1),
+          phase:safeNum(item.phase,0),
+        });
+      }
     }
-    socket.emit("world:snapshot",{seq:this.snapshotSeq,time:+this.time.toFixed(2),fish,food,events});
+
+    socket.emit("world:snapshot",{
+      seq:safeNum(this.snapshotSeq,0),
+      time:+safeNum(this.time,0).toFixed(2),
+      fish,
+      food,
+      events:safeEvents,
+    });
   }
 
   dispose(){clearInterval(this.timer);}
