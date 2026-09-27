@@ -34,10 +34,6 @@
 
 /* ================================================================
    1.  VECTOR MATH
-   ----------------------------------------------------------------
-   Pure ops keep the original allocation-returning signatures.
-   Mutating variants (*To) write into `out` and return it, so the
-   renderer/sim can run entire frames without allocating a vector.
    ================================================================ */
 const v = {
   /* ---- allocation-returning (legacy, unchanged) ---- */
@@ -145,10 +141,6 @@ const PLAYER_LINEAGE = 'predator';
 
 /* ================================================================
    4.  CONFIG
-   ----------------------------------------------------------------
-   Every key referenced by ecosystem-simulation.js / fish-behavior.js
-   is present here.  New tuning blocks are grouped at the end
-   under ANIM (animation tuning) and VIS (scale-safe caps).
    ================================================================ */
 const CFG = {
   /* ---- world bounds ---- */
@@ -266,22 +258,17 @@ const CFG = {
      ANIMATION TUNING — read by the renderer with safe fallbacks.
      ------------------------------------------------------------ */
   ANIM: {
-    /* body undulation */
     undulateAmp: 0.055,
     undulateAmpMoving: 0.075,
     undulateSpeed: 6.0,
     undulateFreq: 3.4,
     undulateFreqFast: 5.2,
     idleMotion: 0.35,
-
-    /* tail */
     tailLag: 0.95,
     tailSweepBase: 0.10,
     tailSweepMax: 0.28,
     tailSweepSpeed: 0.0055,
     tailRipple: 0.12,
-
-    /* fins */
     finFlapIdle: 1.6,
     finFlapCruise: 2.2,
     finFlapChase: 2.8,
@@ -291,29 +278,17 @@ const CFG = {
     finFlapAmpChase: 0.55,
     finFlapAmpFlee: 0.65,
     finFlapAmpStalk: 0.18,
-
-    /* dorsal */
     dorsalSway: 0.10,
     dorsalSwayFreq: 1.35,
-
-    /* eye */
     eyeBlinkMin: 2.5,
     eyeBlinkMax: 7.0,
     pupilTrack: 0.30,
-
-    /* breathing */
     breatheAmp: 0.020,
     breatheFreq: 2.1,
-
-    /* glow pulses */
     glowPulseAmp: 0.15,
     glowPulseFreq: 2.6,
-
-    /* evolution rings */
     evoRingCount: 3,
     evoRingReach: 5.0,
-
-    /* spawn fade */
     spawnFadeTime: 0.5,
   },
 
@@ -343,101 +318,78 @@ const STAGE_SIZES = [8, 16, 30, 60];
 
 /* ================================================================
    6.  BODY PROFILES
-   ----------------------------------------------------------------
-   12-point half-width curves, head (t = 0) → tail (t = 1).
-   One profile per (lineage, stage).  15 lineages × 4 stages.
-
-   Naming: <lineage prefix><stage number>
-     pr predator   sw swift     ar armor    se serpent   ab abyss
-     pu puffer     sf swordfish pi piranha  an angler    mn manta
-     ee eel        je jelly     ba barracuda ko koi       le leviathan
    ================================================================ */
 const PROFILES = {
-  /* ---------------- PREDATOR — balanced torpedo ---------------- */
   pr1: [0.09, 0.18, 0.26, 0.31, 0.32, 0.31, 0.27, 0.22, 0.16, 0.10, 0.05, 0.02],
   pr2: [0.10, 0.22, 0.36, 0.48, 0.54, 0.53, 0.46, 0.36, 0.24, 0.14, 0.06, 0.02],
   pr3: [0.08, 0.18, 0.32, 0.46, 0.55, 0.56, 0.50, 0.40, 0.27, 0.16, 0.07, 0.02],
   pr4: [0.06, 0.16, 0.32, 0.52, 0.66, 0.72, 0.68, 0.54, 0.36, 0.19, 0.07, 0.02],
 
-  /* ---------------- SWIFT — thin dart ---------------- */
   sw1: [0.07, 0.14, 0.20, 0.22, 0.21, 0.18, 0.14, 0.10, 0.06, 0.03, 0.01, 0.00],
   sw2: [0.08, 0.16, 0.24, 0.27, 0.26, 0.22, 0.17, 0.12, 0.07, 0.03, 0.01, 0.00],
   sw3: [0.09, 0.20, 0.32, 0.37, 0.36, 0.31, 0.23, 0.15, 0.08, 0.04, 0.01, 0.00],
   sw4: [0.10, 0.22, 0.38, 0.46, 0.45, 0.39, 0.30, 0.20, 0.11, 0.05, 0.02, 0.00],
 
-  /* ---------------- ARMOR — chunky tank ---------------- */
   ar1: [0.11, 0.22, 0.30, 0.34, 0.33, 0.30, 0.25, 0.19, 0.13, 0.07, 0.03, 0.01],
   ar2: [0.13, 0.28, 0.42, 0.52, 0.54, 0.51, 0.44, 0.34, 0.22, 0.12, 0.05, 0.01],
   ar3: [0.15, 0.32, 0.52, 0.68, 0.74, 0.72, 0.62, 0.48, 0.31, 0.16, 0.06, 0.01],
   ar4: [0.17, 0.38, 0.64, 0.84, 0.94, 0.92, 0.80, 0.62, 0.40, 0.20, 0.07, 0.02],
 
-  /* ---------------- SERPENT — long, near-uniform ---------------- */
   se1: [0.08, 0.10, 0.12, 0.14, 0.15, 0.15, 0.14, 0.12, 0.10, 0.07, 0.04, 0.01],
   se2: [0.09, 0.12, 0.15, 0.17, 0.18, 0.18, 0.17, 0.15, 0.12, 0.09, 0.05, 0.02],
   se3: [0.10, 0.14, 0.19, 0.22, 0.24, 0.24, 0.22, 0.19, 0.15, 0.11, 0.06, 0.03],
   se4: [0.12, 0.17, 0.23, 0.29, 0.32, 0.32, 0.30, 0.26, 0.20, 0.14, 0.08, 0.03],
 
-  /* ---------------- ABYSS — bulky jaw, sharp taper ---------------- */
   ab1: [0.10, 0.18, 0.24, 0.26, 0.24, 0.20, 0.15, 0.10, 0.06, 0.03, 0.01, 0.00],
   ab2: [0.14, 0.28, 0.40, 0.46, 0.45, 0.39, 0.30, 0.20, 0.12, 0.06, 0.02, 0.00],
   ab3: [0.18, 0.38, 0.56, 0.66, 0.64, 0.55, 0.42, 0.28, 0.16, 0.08, 0.03, 0.00],
   ab4: [0.22, 0.48, 0.72, 0.88, 0.86, 0.76, 0.58, 0.38, 0.22, 0.10, 0.03, 0.00],
 
-  /* ---------------- PUFFER — round inflatable balloon ---------------- */
   pu1: [0.14, 0.30, 0.48, 0.62, 0.68, 0.66, 0.58, 0.46, 0.32, 0.18, 0.07, 0.02],
   pu2: [0.16, 0.36, 0.58, 0.76, 0.84, 0.82, 0.72, 0.58, 0.40, 0.22, 0.09, 0.02],
   pu3: [0.18, 0.42, 0.68, 0.88, 0.98, 0.96, 0.86, 0.70, 0.50, 0.28, 0.11, 0.03],
   pu4: [0.20, 0.48, 0.78, 1.00, 1.12, 1.10, 0.98, 0.80, 0.58, 0.32, 0.12, 0.03],
 
-  /* ---------------- SWORDFISH — long bill, deep mid ---------------- */
   sf1: [0.03, 0.06, 0.12, 0.20, 0.26, 0.27, 0.24, 0.18, 0.12, 0.06, 0.02, 0.00],
   sf2: [0.04, 0.08, 0.16, 0.26, 0.34, 0.35, 0.31, 0.24, 0.16, 0.08, 0.03, 0.00],
   sf3: [0.04, 0.10, 0.20, 0.32, 0.42, 0.44, 0.39, 0.30, 0.20, 0.10, 0.04, 0.00],
   sf4: [0.05, 0.12, 0.24, 0.38, 0.50, 0.52, 0.46, 0.36, 0.24, 0.12, 0.05, 0.01],
 
-  /* ---------------- PIRANHA — deep body, blunt head ---------------- */
   pi1: [0.16, 0.30, 0.42, 0.50, 0.52, 0.49, 0.42, 0.33, 0.23, 0.13, 0.05, 0.01],
   pi2: [0.18, 0.34, 0.48, 0.58, 0.60, 0.56, 0.48, 0.38, 0.26, 0.15, 0.06, 0.01],
   pi3: [0.20, 0.38, 0.54, 0.66, 0.68, 0.64, 0.55, 0.43, 0.30, 0.17, 0.07, 0.01],
   pi4: [0.22, 0.42, 0.60, 0.74, 0.76, 0.71, 0.61, 0.48, 0.33, 0.19, 0.08, 0.02],
 
-  /* ---------------- ANGLER — huge head, tapering body ---------------- */
   an1: [0.16, 0.32, 0.44, 0.50, 0.48, 0.42, 0.34, 0.25, 0.16, 0.09, 0.04, 0.01],
   an2: [0.18, 0.36, 0.50, 0.58, 0.56, 0.49, 0.40, 0.29, 0.19, 0.10, 0.04, 0.01],
   an3: [0.20, 0.40, 0.56, 0.66, 0.64, 0.56, 0.45, 0.33, 0.21, 0.11, 0.05, 0.01],
   an4: [0.22, 0.44, 0.62, 0.74, 0.72, 0.63, 0.51, 0.37, 0.24, 0.13, 0.05, 0.01],
 
-  /* ---------------- MANTA — wide wings ---------------- */
   mn1: [0.12, 0.30, 0.50, 0.66, 0.74, 0.72, 0.62, 0.48, 0.33, 0.19, 0.08, 0.02],
   mn2: [0.14, 0.36, 0.60, 0.80, 0.90, 0.88, 0.76, 0.58, 0.40, 0.23, 0.10, 0.02],
   mn3: [0.16, 0.42, 0.70, 0.94, 1.06, 1.04, 0.90, 0.70, 0.48, 0.27, 0.11, 0.03],
   mn4: [0.18, 0.48, 0.80, 1.08, 1.22, 1.20, 1.04, 0.80, 0.55, 0.31, 0.12, 0.03],
 
-  /* ---------------- EEL — thin ribbon ---------------- */
   ee1: [0.07, 0.09, 0.11, 0.12, 0.13, 0.13, 0.12, 0.11, 0.09, 0.06, 0.03, 0.01],
   ee2: [0.08, 0.11, 0.13, 0.15, 0.16, 0.16, 0.15, 0.13, 0.11, 0.08, 0.04, 0.01],
   ee3: [0.09, 0.12, 0.16, 0.19, 0.20, 0.20, 0.19, 0.16, 0.13, 0.09, 0.05, 0.02],
   ee4: [0.10, 0.15, 0.20, 0.24, 0.26, 0.26, 0.24, 0.21, 0.17, 0.12, 0.07, 0.02],
 
-  /* ---------------- JELLY — bell dome ---------------- */
   je1: [0.20, 0.42, 0.62, 0.74, 0.78, 0.76, 0.68, 0.56, 0.42, 0.27, 0.13, 0.04],
   je2: [0.22, 0.48, 0.70, 0.84, 0.88, 0.86, 0.76, 0.62, 0.46, 0.30, 0.14, 0.04],
   je3: [0.24, 0.54, 0.78, 0.94, 0.98, 0.96, 0.85, 0.70, 0.52, 0.33, 0.16, 0.05],
   je4: [0.26, 0.60, 0.86, 1.04, 1.10, 1.08, 0.95, 0.78, 0.58, 0.37, 0.17, 0.05],
 
-  /* ---------------- BARRACUDA — pike ---------------- */
   ba1: [0.06, 0.10, 0.16, 0.21, 0.23, 0.22, 0.19, 0.15, 0.11, 0.07, 0.03, 0.01],
   ba2: [0.07, 0.12, 0.19, 0.25, 0.28, 0.27, 0.23, 0.18, 0.13, 0.08, 0.04, 0.01],
   ba3: [0.08, 0.14, 0.22, 0.30, 0.34, 0.33, 0.28, 0.22, 0.16, 0.10, 0.04, 0.01],
   ba4: [0.09, 0.16, 0.26, 0.35, 0.40, 0.39, 0.33, 0.26, 0.19, 0.12, 0.05, 0.02],
 
-  /* ---------------- KOI — rounded full body ---------------- */
   ko1: [0.12, 0.24, 0.36, 0.44, 0.48, 0.47, 0.42, 0.34, 0.25, 0.15, 0.06, 0.02],
   ko2: [0.14, 0.28, 0.42, 0.52, 0.56, 0.55, 0.49, 0.40, 0.29, 0.18, 0.08, 0.02],
   ko3: [0.16, 0.32, 0.48, 0.60, 0.66, 0.64, 0.57, 0.47, 0.34, 0.21, 0.09, 0.03],
   ko4: [0.18, 0.36, 0.54, 0.68, 0.74, 0.72, 0.64, 0.52, 0.38, 0.23, 0.10, 0.03],
 
-  /* ---------------- LEVIATHAN — massive apex bulk ---------------- */
   le1: [0.14, 0.28, 0.42, 0.50, 0.52, 0.49, 0.42, 0.33, 0.23, 0.14, 0.06, 0.02],
   le2: [0.16, 0.34, 0.52, 0.64, 0.68, 0.64, 0.55, 0.43, 0.30, 0.18, 0.07, 0.02],
   le3: [0.18, 0.40, 0.62, 0.78, 0.84, 0.80, 0.68, 0.53, 0.37, 0.22, 0.09, 0.03],
@@ -445,16 +397,7 @@ const PROFILES = {
 };
 
 /* ================================================================
-   7.  PROFILE SAMPLING — fast LUT path
-   ----------------------------------------------------------------
-   widthAt() is called per resampled spine sample, per fish, per
-   frame.  Instead of running Catmull-Rom every call, we bake each
-   profile into a fixed-resolution Float32Array once at load, then
-   do a single lerp per lookup.
-
-   PROFILE_LUT_SIZE = 96 matches CFG.VIS.maxSpineSamples, so any
-   resampled spine samples the profile at native resolution.
-   Raw-array callers still hit the original Catmull-Rom path.
+   7.  PROFILE SAMPLING
    ================================================================ */
 const PROFILE_LUT_SIZE = 96;
 
@@ -486,7 +429,6 @@ const PROFILE_LUT = (() => {
         (-p0 + 3 * p1 - 3 * p2 + p3) * f3
       );
 
-      /* clamp between the two bracketing samples: no overshoot */
       const lo = p1 < p2 ? p1 : p2;
       const hi = p1 > p2 ? p1 : p2;
       if (w < lo) w = lo;
@@ -512,7 +454,6 @@ function widthAt(key, t) {
     return lut[i] + (lut[i + 1] - lut[i]) * f;
   }
 
-  /* raw-array fallback — original Catmull-Rom path */
   const a = key;
   if (!a || !a.length) return 0;
   if (t <= 0) return a[0];
@@ -537,14 +478,12 @@ function widthAt(key, t) {
   return w < 0 ? 0 : w;
 }
 
-/* Resample a profile into `n` evenly spaced points (LUT-backed) */
 function sampleProfile(key, n = 32) {
   const out = new Array(n);
   for (let i = 0; i < n; i++) out[i] = widthAt(key, i / (n - 1));
   return out;
 }
 
-/* Smooth blend of two profiles — useful for stage morph animations */
 function blendProfiles(keyA, keyB, t) {
   t = clamp01(t);
   const N = 24;
@@ -555,7 +494,6 @@ function blendProfiles(keyA, keyB, t) {
   return a;
 }
 
-/* Position of maximum width along the body (0 = nose, 1 = tail) */
 function profilePeak(key) {
   const lut = (typeof key === 'string') ? PROFILE_LUT[key] : null;
   if (lut) {
@@ -573,23 +511,12 @@ function profilePeak(key) {
 /* ================================================================
    8.  LINEAGES
    ----------------------------------------------------------------
-   15 lineages, 4 stages each (stage 0 = fry → stage 3 = apex).
-
-   Per-lineage:
-     name / desc                 display strings
-     spdMul  defMul  aggrMul     simulation multipliers
-     visMul  stamMul
-     flags: ambush, dash, swarm, apex, reflect, sting, lure
-     visual defaults (overridable per stage):
-       waveAmp, waveFreq, tailMult, tailWidth,
-       finSpan, finFlap, dorsalPos, eyeScale,
-       glowTint [r,g,b], accent
-
-   Per-stage:
-     { profile, shape, dorsal, color, aggr, size, ...overrides }
-
-   shape  ∈ 'forked' | 'fan' | 'crescent' | 'spike'
-   dorsal ∈ 'tiny' | 'spiny' | 'rear' | 'spike' | 'crest'
+   Numeric trait flags (read as multipliers by fish-behavior.js):
+     dash    — speed multiplier applied during ATTACK; 0/false disables
+     reflect — fraction of incoming damage reflected to the attacker
+     sting   — fraction of incoming damage added as bleeding on attacker
+   Boolean trait flags (read as plain booleans):
+     ambush, swarm, apex, lure
    ================================================================ */
 const LINEAGES = {
 
@@ -620,7 +547,7 @@ const LINEAGES = {
     name: 'SWIFT',
     desc: 'Fast · Hit and run',
     spdMul: 1.28, defMul: 0.95, aggrMul: 0.70, visMul: 1.05, stamMul: 0.55,
-    ambush: false, dash: true, swarm: false, apex: false,
+    ambush: false, dash: 1.45, swarm: false, apex: false,
     reflect: false, sting: false, lure: false,
     waveAmp: 1.25, waveFreq: 1.25, tailMult: 1.35, tailWidth: 0.85,
     finSpan: 0.90, finFlap: 1.30, dorsalPos: 0.30, eyeScale: 0.95,
@@ -641,7 +568,7 @@ const LINEAGES = {
     desc: 'Tanky · Slow bruiser',
     spdMul: 0.82, defMul: 1.22, aggrMul: 0.90, visMul: 0.95, stamMul: 1.10,
     ambush: false, dash: false, swarm: false, apex: false,
-    reflect: true, sting: false, lure: false,
+    reflect: 0.20, sting: false, lure: false,
     waveAmp: 0.65, waveFreq: 0.80, tailMult: 0.95, tailWidth: 1.30,
     finSpan: 1.20, finFlap: 0.80, dorsalPos: 0.45, eyeScale: 0.85,
     glowTint: [255, 235, 200], accent: '#f6e5c8',
@@ -703,7 +630,7 @@ const LINEAGES = {
     desc: 'Inflates · Spiny defense',
     spdMul: 0.70, defMul: 1.45, aggrMul: 0.60, visMul: 0.90, stamMul: 1.20,
     ambush: false, dash: false, swarm: false, apex: false,
-    reflect: true, sting: true, lure: false,
+    reflect: 0.35, sting: 0.25, lure: false,
     waveAmp: 0.55, waveFreq: 1.10, tailMult: 0.70, tailWidth: 1.35,
     finSpan: 0.85, finFlap: 1.40, dorsalPos: 0.50, eyeScale: 1.15,
     glowTint: [255, 230, 160], accent: '#ffeeb0',
@@ -722,7 +649,7 @@ const LINEAGES = {
     name: 'SWORDFISH',
     desc: 'Bill · Devastating dash',
     spdMul: 1.35, defMul: 0.95, aggrMul: 0.95, visMul: 1.10, stamMul: 0.65,
-    ambush: false, dash: true, swarm: false, apex: true,
+    ambush: false, dash: 1.55, swarm: false, apex: true,
     reflect: false, sting: false, lure: false,
     waveAmp: 1.30, waveFreq: 1.15, tailMult: 1.45, tailWidth: 1.05,
     finSpan: 1.05, finFlap: 1.20, dorsalPos: 0.28, eyeScale: 1.00,
@@ -805,7 +732,7 @@ const LINEAGES = {
     desc: 'Ribbon · Electric ambush',
     spdMul: 0.90, defMul: 1.05, aggrMul: 0.90, visMul: 1.20, stamMul: 1.00,
     ambush: true, dash: false, swarm: false, apex: false,
-    reflect: false, sting: true, lure: false,
+    reflect: false, sting: 0.30, lure: false,
     waveAmp: 1.35, waveFreq: 1.75, tailMult: 0.85, tailWidth: 0.60,
     finSpan: 0.55, finFlap: 1.25, dorsalPos: 0.60, eyeScale: 0.85,
     glowTint: [200, 255, 190], accent: '#a0b880',
@@ -825,7 +752,7 @@ const LINEAGES = {
     desc: 'Drifter · Numbing sting',
     spdMul: 0.65, defMul: 1.30, aggrMul: 0.55, visMul: 1.00, stamMul: 1.30,
     ambush: false, dash: false, swarm: false, apex: false,
-    reflect: false, sting: true, lure: false,
+    reflect: false, sting: 0.50, lure: false,
     waveAmp: 0.45, waveFreq: 1.30, tailMult: 0.55, tailWidth: 0.45,
     finSpan: 0.40, finFlap: 1.60, dorsalPos: 0.15, eyeScale: 0.70,
     glowTint: [235, 190, 255], accent: '#f0d8f8',
@@ -844,7 +771,7 @@ const LINEAGES = {
     name: 'BARRACUDA',
     desc: 'Pike · Lightning strike',
     spdMul: 1.30, defMul: 0.90, aggrMul: 1.10, visMul: 1.05, stamMul: 0.60,
-    ambush: true, dash: true, swarm: false, apex: true,
+    ambush: true, dash: 1.50, swarm: false, apex: true,
     reflect: false, sting: false, lure: false,
     waveAmp: 1.15, waveFreq: 1.20, tailMult: 1.30, tailWidth: 0.80,
     finSpan: 0.85, finFlap: 1.25, dorsalPos: 0.30, eyeScale: 1.05,
@@ -885,7 +812,7 @@ const LINEAGES = {
     desc: 'Apex · Colossal terror',
     spdMul: 0.95, defMul: 1.35, aggrMul: 1.20, visMul: 1.25, stamMul: 1.40,
     ambush: true, dash: false, swarm: false, apex: true,
-    reflect: true, sting: false, lure: false,
+    reflect: 0.25, sting: false, lure: false,
     waveAmp: 0.85, waveFreq: 0.75, tailMult: 1.40, tailWidth: 1.35,
     finSpan: 1.35, finFlap: 0.80, dorsalPos: 0.45, eyeScale: 1.20,
     glowTint: [150, 200, 255], accent: '#7a9cb8',
@@ -916,11 +843,7 @@ const STAGE_THRESHOLDS = (() => {
 })();
 
 /* ----------------------------------------------------------------
-   8b.  Merged visual params  →  one frozen record per stage
-   ----------------------------------------------------------------
-   Precedence: VISUAL_DEFAULTS  <  lineage  <  stage
-
-   15 lineages × 4 stages = 60 records, built once at load.
+   8b.  Merged visual params
    ---------------------------------------------------------------- */
 const VISUAL_DEFAULTS = {
   waveAmp: 1.00,
@@ -935,7 +858,6 @@ const VISUAL_DEFAULTS = {
   accent: '#ffffff',
 };
 
-/* Clone array values so frozen records never share mutable refs. */
 const cloneVisVal = (val) => Array.isArray(val) ? val.slice() : val;
 
 const STAGE_PARAMS = (() => {
@@ -944,11 +866,9 @@ const STAGE_PARAMS = (() => {
     const L = LINEAGES[lk];
     out[lk] = L.stages.map((st) => {
       const merged = {};
-      /* defaults → lineage → stage */
       for (const k in VISUAL_DEFAULTS) merged[k] = cloneVisVal(VISUAL_DEFAULTS[k]);
       for (const k in VISUAL_DEFAULTS) if (L[k] !== undefined)  merged[k] = cloneVisVal(L[k]);
       for (const k in VISUAL_DEFAULTS) if (st[k] !== undefined) merged[k] = cloneVisVal(st[k]);
-      /* carry the sim-relevant fields straight through */
       merged.profile = st.profile;
       merged.shape   = st.shape;
       merged.dorsal  = st.dorsal;
@@ -973,7 +893,6 @@ function getStage(lineageKey, idx) {
   return L.stages[clamp(idx | 0, 0, L.stages.length - 1)];
 }
 
-/* Stage index (0..3) that best fits this size for this lineage. */
 function stageForSize(lineageKey, size) {
   const th = STAGE_THRESHOLDS[lineageKey] || STAGE_THRESHOLDS[PLAYER_LINEAGE];
   if (size < th[0]) return 0;
@@ -982,21 +901,16 @@ function stageForSize(lineageKey, size) {
   return 3;
 }
 
-/* Stage record (raw, still with the fallback chain) — legacy API. */
 function lineageStageData(lineageKey, size) {
   const L = getLineage(lineageKey);
   return L.stages[stageForSize(lineageKey, size)];
 }
 
-/* Cached merged visual record — this is the one the renderer
-   should use in hot loops: stage → lineage → default resolved once,
-   frozen, no allocation, single lookup per fish per frame. */
 function resolveVisualParams(lineageKey, size) {
   const stages = STAGE_PARAMS[lineageKey] || STAGE_PARAMS[PLAYER_LINEAGE];
   return stages[stageForSize(lineageKey, size)];
 }
 
-/* Legacy single-param accessor — still works, now LUT-fast. */
 function visualParam(lineageKey, size, param, fallback = 1.0) {
   const p = resolveVisualParams(lineageKey, size)[param];
   return p !== undefined ? p : fallback;
@@ -1004,13 +918,9 @@ function visualParam(lineageKey, size, param, fallback = 1.0) {
 
 /* ================================================================
    10.  EXPORTS
-   ----------------------------------------------------------------
-   Drop-in as a classic script (globalThis) or swap for ES module
-   `export { … }` if the project uses a bundler.
    ================================================================ */
 if (typeof globalThis !== 'undefined') {
   Object.assign(globalThis, {
-    /* vectors + math */
     v, clamp, clamp01, lerp, invLerp, remap,
     smoothstep, smootherstep,
     easeOutCubic, easeInCubic, easeInOutCubic,
@@ -1019,20 +929,39 @@ if (typeof globalThis !== 'undefined') {
     wrapA, wrapAFast, angleDiff, angleLerp,
     TAU, HALF_PI,
 
-    /* palette */
     PLAYER_COLOR, PLAYER_GLOW, PLAYER_DARK, PLAYER_LINEAGE,
 
-    /* config + names */
     CFG, STAGE_NAMES, STAGE_SIZES,
 
-    /* profiles (LUT-backed) */
     PROFILES, PROFILE_LUT, PROFILE_LUT_SIZE,
     widthAt, sampleProfile, blendProfiles, profilePeak,
 
-    /* lineages */
     LINEAGES, LINEAGE_KEYS,
     STAGE_THRESHOLDS, VISUAL_DEFAULTS, STAGE_PARAMS,
     getLineage, getStage, stageForSize, lineageStageData,
     visualParam, resolveVisualParams,
   });
+}
+
+/* ================================================================
+   11.  LOAD-TIME SANITY CHECK
+   ----------------------------------------------------------------
+   Fires a loud console warning if the roster isn't 15/15/60.
+   If this appears in DevTools, you're loading a stale copy.
+   ================================================================ */
+if (typeof console !== 'undefined' && console.warn) {
+  const EXPECTED_LINEAGES = 15;
+  const EXPECTED_PROFILES = 60;
+  const gotL = Object.keys(LINEAGES).length;
+  const gotK = LINEAGE_KEYS.length;
+  const gotP = Object.keys(PROFILES).length;
+  if (gotL !== EXPECTED_LINEAGES || gotK !== EXPECTED_LINEAGES || gotP !== EXPECTED_PROFILES) {
+    console.warn(
+      '[game-world-config] Roster mismatch — expected ' +
+      EXPECTED_LINEAGES + ' lineages / ' + EXPECTED_LINEAGES + ' keys / ' + EXPECTED_PROFILES + ' profiles, got ' +
+      gotL + ' / ' + gotK + ' / ' + gotP +
+      '. A stale or partial copy of this file is likely being served.',
+      { LINEAGE_KEYS: LINEAGE_KEYS.slice() }
+    );
+  }
 }

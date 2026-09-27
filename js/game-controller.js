@@ -77,7 +77,7 @@ class Game{
         else if(k==='s')this.openShop();
       } else if(this.running){
         /* ============================================
-           CHEAT CODE â€” press 8 for +2 instant kills
+           CHEAT CODE — press 8 for +2 instant kills
         ============================================ */
         if(k==='8'){ this.cheatKills(2); }
         if(k==='9'){ this.cheatShoal(); }
@@ -160,23 +160,39 @@ class Game{
   }
 
   /* ============================================================
-     RANDOM LINEAGE EVERY RUN
+     SINGLE-PLAYER RUN
+     ------------------------------------------------------------
+     Rolls a fresh random lineage from the full LINEAGE_KEYS list
+     (all 15 keys) and starts an offline run on the local Eco.
+     Called as a fallback from startOnline() when multiplayer is
+     unavailable or the join fails.
   ============================================================ */
   startRun(){
     if(this.online&&this.multiplayer)this.multiplayer.leave();
     this.online=false;this._networkFish.clear();
     this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
-    this.showScreen(null);
+    this._setState(GS.PLAYING);
     this.eco.reset(this.playerLineage);
     this.eco.onPlayerDeath=()=>this.gameOver();
     this.eco.onPlayerEvolve=(a,b)=>this.showEvo(b);
     this.running=true;
-    /* Brief hint to the player which lineage they got */
     this.showToast(`LINEAGE · ${LINEAGES[this.playerLineage].name}`);
   }
 
+  /* ============================================================
+     ONLINE RUN
+     ------------------------------------------------------------
+     If MultiplayerClient is not available (undefined at load, or
+     already torn down), fall straight through to a local run so
+     the player is never stuck on a dead-end "UNAVAILABLE" toast.
+     Same fallback on join failure.
+  ============================================================ */
   startOnline(){
-    if(!this.multiplayer){this.showToast('MULTIPLAYER CLIENT UNAVAILABLE');return;}
+    if(!this.multiplayer){
+      console.warn('[Game] MultiplayerClient unavailable — running single-player.');
+      this.startRun();
+      return;
+    }
     this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
     this.showToast('CONNECTING TO OCEAN...');
     this.multiplayer.join(this.playerLineage).then(info=>{
@@ -193,9 +209,8 @@ class Game{
       this.multiplayer.start();
       this.showToast(`ONLINE · ${info.roomId.toUpperCase()} · ${this.playerLineage.toUpperCase()}`);
     }).catch(error=>{
-      /* ---- Expose the real error in DevTools, then show the toast ---- */
-      console.error(error);
-      this.showToast(error&&error.message?error.message:String(error));
+      console.error('[Game] Multiplayer join failed — falling back to single-player:', error);
+      this.startRun();
     });
   }
 
@@ -224,7 +239,6 @@ class Game{
     for(const [id] of this._networkFish)if(!seen.has(id))this._networkFish.delete(id);
     this.eco.fish=Array.from(this._networkFish.values());
     this.eco.player=this._networkFish.get(playerId)||null;
-    /* ---- Defensive: snapshot.food may be omitted or not an array ---- */
     this.eco.food=Array.isArray(snapshot.food)?snapshot.food:[];
     this.eco.time=snapshot.time;
     this.applyMultiplayerEvents(snapshot.events||[],playerId);
@@ -312,20 +326,16 @@ class Game{
 
   /* ============================================================
     CHEAT — instantly award N kills
-     Increments kill counter, adds coins, applies small growth,
-     spawns coin popups, flashes the screen.
   ============================================================ */
   cheatKills(n){
     const p=this.eco.player;
     if(!p||!p.alive)return;
     for(let i=0;i<n;i++){
       p.kills++;
-      /* Treat as eating a fry (1 coin base) */
       const coins=Math.max(1,Math.round(1*this.profile.coinMult));
       p.coinsEarned+=coins;
       this.eco.pendingCoins+=coins;
       this.eco.spawnCoinPopup(p.pos,coins);
-      /* Small growth like eating a fry */
       p.grow(1.0*this.profile.growthMult);
     }
     this.eco.flicker=Math.max(this.eco.flicker,0.12);
