@@ -890,7 +890,7 @@ class Renderer{
     }
   }
 
-  _computeWidths(m, profileKey, sz, phase){
+    _computeWidths(m, profileKey, sz, phase){
     const CX = this._cx, CY = this._cy, HW = this._hw, SW = this._sw;
     this._grow(HW, m); this._grow(SW, m);
 
@@ -905,6 +905,27 @@ class Renderer{
       HW[i] = w;
     }
 
+    /* ----------------------------------------------------------
+       Curvature clamp.
+       The spine's local radius of curvature R puts an upper
+       bound of ~R on how wide the body can be without the
+       top/bottom edges folding through themselves.  This is a
+       legitimate self-intersection guard.
+
+       BUG FIX: the original code applied `HW[i] = min(HW[i], R*0.85)`
+       unconditionally.  On a straight-but-undulated spine (which
+       is exactly the select-screen case, where renderSpine() and
+       _undulate() stack two small lateral offsets), the discrete
+       curvature reading is dominated by numerical noise and R
+       collapses to a few units — well below the fish's real
+       half-width — so HW[] gets crushed to a wireframe sliver
+       everywhere.
+
+       Fix: only clamp when the curvature limit is (a) actually
+       smaller than HW[i] AND (b) still meaningfully large
+       (> 40 % of HW[i]).  Below that floor the "curvature" is
+       undulation noise, not a fold, and clamping is wrong.
+       ---------------------------------------------------------- */
     for(let i = 1; i < m - 1; i++){
       const ax = CX[i] - CX[i - 1], ay = CY[i] - CY[i - 1];
       const bx = CX[i + 1] - CX[i], by = CY[i + 1] - CY[i];
@@ -916,7 +937,8 @@ class Renderer{
       if(ang < 1e-4) continue;
       const R = ((la + lb) * 0.5) / (2 * Math.sin(ang * 0.5));
       const lim = R * 0.85;
-      if(HW[i] > lim) HW[i] = lim;
+      const floor = HW[i] * 0.40;
+      if(HW[i] > lim && lim > floor) HW[i] = lim;
     }
 
     for(let i = 0; i < m; i++) SW[i] = HW[i];
@@ -924,7 +946,6 @@ class Renderer{
       HW[i] = SW[i] * 0.6 + (SW[i - 1] + SW[i + 1]) * 0.2;
     }
   }
-
   _buildOutline(m){
     const CX = this._cx, CY = this._cy, NX = this._nx, NY = this._ny, HW = this._hw;
     const TX = this._tx, TY = this._ty, BX = this._bx, BY = this._by;
@@ -1251,25 +1272,36 @@ class Renderer{
     ctx.globalAlpha = alpha;
 
     if(detail >= 2 && this.quality >= 1 && bodyAlphaMul > 0){
-      const CX = this._cx, CY = this._cy;
+      /* Bail on degenerate geometry: if the body has no volume,
+         the two half-body shading shapes collapse onto the spine
+         and their seams read as a wireframe cross through the
+         middle of the fish.  Only run the shading when there's
+         actually a body to shade. */
+      const HW = this._hw;
+      let maxHW = 0;
+      for(let i = 0; i < m; i++) if(HW[i] > maxHW) maxHW = HW[i];
 
-      ctx.beginPath();
-      ctx.moveTo(this._tx[0], this._ty[0]);
-      this._curveForward(ctx, this._tx, this._ty, m);
-      ctx.lineTo(CX[m - 1], CY[m - 1]);
-      for(let i = m - 2; i >= 0; i--) ctx.lineTo(CX[i], CY[i]);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
-      ctx.fill();
+      if(maxHW > sz * 0.05){
+        const CX = this._cx, CY = this._cy;
 
-      ctx.beginPath();
-      ctx.moveTo(this._bx[0], this._by[0]);
-      this._curveForward(ctx, this._bx, this._by, m);
-      ctx.lineTo(CX[m - 1], CY[m - 1]);
-      for(let i = m - 2; i >= 0; i--) ctx.lineTo(CX[i], CY[i]);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(this._tx[0], this._ty[0]);
+        this._curveForward(ctx, this._tx, this._ty, m);
+        ctx.lineTo(CX[m - 1], CY[m - 1]);
+        for(let i = m - 2; i >= 0; i--) ctx.lineTo(CX[i], CY[i]);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,0,0,0.20)';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(this._bx[0], this._by[0]);
+        this._curveForward(ctx, this._bx, this._by, m);
+        ctx.lineTo(CX[m - 1], CY[m - 1]);
+        for(let i = m - 2; i >= 0; i--) ctx.lineTo(CX[i], CY[i]);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        ctx.fill();
+      }
     }
 
     this._bodyPath(ctx, m);
