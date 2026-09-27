@@ -28,6 +28,14 @@
        with 'lighter' compositing, plus per-pellet bob / pulse /
        wobble.  No more flat grey squares.
      • Eat-pop buffer kept, palette retuned to match.
+
+   APPENDED:
+     • FishPainter — a lightweight companion that reuses the exact
+       same fish-drawing methods (drawFish/drawTail/drawDorsal/
+       drawPectoral/drawEye/drawLure and the spine pipeline) from
+       Renderer.prototype, so the SELECT FISH screen can render
+       pixel-identical fish on a plain dark background without
+       needing an Eco / camera / CRT scene.
    ================================================================ */
 
 class Renderer{
@@ -1115,7 +1123,7 @@ class Renderer{
     }
 
     const isP = fish.isPlayer === true;
-    const player = this.eco.player;
+    const player = this.eco ? this.eco.player : null;
 
     let detail = 3;
     if(!isP){
@@ -1717,4 +1725,84 @@ class Renderer{
     }
     ctx.restore();
   }
+}
+
+/* ================================================================
+   FISH PAINTER
+   ----------------------------------------------------------------
+   A tiny stand-alone fish renderer that reuses the exact same
+   drawing pipeline as Renderer (drawFish / drawTail / drawDorsal /
+   drawPectoral / drawEye / drawLure and the spine resample /
+   undulate / width / outline helpers), so preview fish on the
+   SELECT FISH screen are pixel-identical to in-game fish.
+
+   It requires no Eco, no camera, and no CRT pass — just a canvas
+   context and a Fish instance.  `this.eco` is set to a stub with
+   `player: null` so `drawFish`'s distance-culling branch falls
+   through to its default detail=2 path.
+   ================================================================ */
+class FishPainter{
+  constructor(){
+    /* ---- grow-only geometry buffers (identical to Renderer) ---- */
+    this._cx = []; this._cy = [];
+    this._nx = []; this._ny = [];
+    this._hw = []; this._sw = [];
+    this._tx = []; this._ty = [];
+    this._bx = []; this._by = [];
+    this._minX = 0; this._maxX = 0; this._minY = 0; this._maxY = 0;
+
+    /* ---- timing (advanced by step()) ---- */
+    this._time  = 0;
+    this._dt    = 1/60;
+    this.frame  = 0;
+
+    /* ---- render knobs read by drawFish ---- */
+    this.quality = 2;
+
+    /* ---- eco stub so drawFish's `this.eco.player` access is safe ---- */
+    this.eco = { player: null };
+  }
+
+  /* Advance the internal clock.  Call once per frame before draw(). */
+  step(dt){
+    if(!isFinite(dt) || dt <= 0) dt = 1/60;
+    if(dt > 0.1) dt = 0.1;
+    this._dt = dt;
+    this._time += dt;
+    this.frame++;
+  }
+
+  /* Draw a single fish centered at (cx, cy) in canvas space,
+     optionally scaled by `scale`. */
+  draw(ctx, fish, cx, cy, scale){
+    if(!fish || !fish.alive) return;
+    const s = (isFinite(scale) && scale > 0) ? scale : 1;
+    ctx.save();
+    ctx.translate(cx, cy);
+    if(s !== 1) ctx.scale(s, s);
+    this.drawFish(ctx, fish);
+    ctx.restore();
+  }
+}
+
+/* Copy every fish-drawing method verbatim from Renderer.prototype. */
+FishPainter.prototype._grow           = Renderer.prototype._grow;
+FishPainter.prototype._resampleSpine  = Renderer.prototype._resampleSpine;
+FishPainter.prototype._computeNormals = Renderer.prototype._computeNormals;
+FishPainter.prototype._undulate       = Renderer.prototype._undulate;
+FishPainter.prototype._computeWidths  = Renderer.prototype._computeWidths;
+FishPainter.prototype._buildOutline   = Renderer.prototype._buildOutline;
+FishPainter.prototype._curveForward   = Renderer.prototype._curveForward;
+FishPainter.prototype._curveBackward  = Renderer.prototype._curveBackward;
+FishPainter.prototype._bodyPath       = Renderer.prototype._bodyPath;
+FishPainter.prototype.drawFish        = Renderer.prototype.drawFish;
+FishPainter.prototype.drawTail        = Renderer.prototype.drawTail;
+FishPainter.prototype.drawDorsal      = Renderer.prototype.drawDorsal;
+FishPainter.prototype.drawPectoral    = Renderer.prototype.drawPectoral;
+FishPainter.prototype.drawEye         = Renderer.prototype.drawEye;
+FishPainter.prototype.drawLure        = Renderer.prototype.drawLure;
+FishPainter.prototype.drawFishShadow  = Renderer.prototype.drawFishShadow;
+
+if(typeof globalThis !== 'undefined'){
+  globalThis.FishPainter = FishPainter;
 }

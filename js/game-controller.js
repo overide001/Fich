@@ -39,6 +39,7 @@ class Game{
       sFood:document.getElementById('sFood'),
       sTime:document.getElementById('sTime'),
       startCoins:document.getElementById('startCoins'),
+      startSubtitle:document.querySelector('#start .subtitle'),
       shopCoins:document.getElementById('shopCoins'),
       banner:document.getElementById('banner'),
       bText:document.getElementById('bText'),
@@ -103,6 +104,7 @@ class Game{
     document.addEventListener('visibilitychange',()=>{this._paused=document.hidden;});
 
     this.refreshStartCoins();
+    this.updateStartSubtitle();
     requestAnimationFrame(t=>this.loop(t));
   }
 
@@ -119,6 +121,27 @@ class Game{
     this.el.banner.style.opacity='0';this.bannerTimer=0;
     if(previous===GS.ONLINE&&next!==GS.ONLINE&&this.multiplayer)this.multiplayer.leave();
     if(previous===GS.ONLINE&&next!==GS.ONLINE)this._networkFish.clear();
+    if(next===GS.MENU)this.updateStartSubtitle();
+  }
+
+  /* ============================================================
+     START-SCREEN SUBTITLE
+     ------------------------------------------------------------
+     Reflects the current lineage choice live:
+       · selectedLineage set  → "PLAYING AS: <LINEAGE NAME>"
+       · selectedLineage null → "RANDOM LINEAGE · EVERY RUN"
+     Called on boot, on every transition into GS.MENU, and by
+     FishSelectController whenever the selection changes.
+  ============================================================ */
+  updateStartSubtitle(){
+    const el=this.el.startSubtitle;
+    if(!el)return;
+    const key=this.selectedLineage;
+    if(key&&LINEAGES[key]){
+      el.textContent='PLAYING AS: '+LINEAGES[key].name;
+    }else{
+      el.textContent='RANDOM LINEAGE · EVERY RUN';
+    }
   }
 
   buildShopTabs(){
@@ -164,6 +187,7 @@ class Game{
     this.el.banner.style.opacity='0';
     this.bannerTimer=0;
     this.refreshStartCoins();
+    this.updateStartSubtitle();
   }
 
   openShop(){
@@ -185,7 +209,8 @@ class Game{
      If the player has locked in a lineage via the fish-select
      screen, use it. Otherwise roll a fresh random one from the
      full LINEAGE_KEYS list — preserving the original "surprise
-     every run" behavior for players who never open fish select.
+     every run" behavior for players who never open fish select
+     (or who explicitly pick RANDOM).
   ============================================================ */
   startRun(){
     if(this.online&&this.multiplayer)this.multiplayer.leave();

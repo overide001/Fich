@@ -319,115 +319,100 @@ const STAGE_SIZES = [8, 16, 30, 60];
 /* ================================================================
    6.  BODY PROFILES
    ----------------------------------------------------------------
-   Index 0 = nose, index 11 = tail peduncle.  Every lineage's curve
-   is a genuinely different silhouette CLASS, not a scaled copy:
+   Index 0 = nose, index 11 = tail peduncle.
+   Each lineage deliberately reads as a distinct silhouette class:
 
-     pr  fusiform  — classic torpedo, symmetric rise/fall, mid peak
-     sw  spindle   — mass shifted to 25–30%, thin rear, needle nose
-     ar  boxy      — near-constant width 15–65%, blunt drop-off
-     se  ribbon-lt — very low, slight swelling at 40–60%, no peak
-     ab  jaw       — peak at 5–10% (head), steep straight taper
-     pu  disc      — wide plateau 30–70%, abrupt stub-tail
-     sf  bill      — near-zero 0–15% (bill), sudden rise, mid mass
-     pi  blunt-disc— blunt high nose, deep mid, shorter than puffer
-     an  bell-jaw  — peak AT THE NOSE, long thin trailing rear third
-     mn  diamond   — thin core, wide mid (wings are finSpan, not width)
-     ee  ribbon    — near-constant thin line, lowest variation of all
-     je  bell      — fat rounded dome 0–25%, long thin tendril rear
-     ba  pike      — nearly straight, uniform, sharpest/leanest
-     ko  oval      — smooth full-body oval, thick tail base, no points
-     le  colossus  — thick through 70%, heavy tail base, huge overall
+     pr  fusiform  — classic balanced predator
+     sw  spindle   — mass forward, thin rear (fast)
+     ar  boxy      — blunt head, long flat back
+     se  ribbon-lt — long gently-swelling serpent
+     ab  jaw       — massive head, plateau, gradual rear taper
+     pu  disc      — wide plateau through the middle
+     sf  bill      — near-zero nose, mid-body mass (swordfish)
+     pi  deep      — blunt round nose, steep rear drop
+     an  bell-jaw  — balloon head, thin trailing rear
+     mn  diamond   — symmetric taper from a central peak
+     ee  ribbon    — near-constant, lowest overall
+     je  bell      — fat rounded front, long thin trail
+     ba  pike      — uniformly slender
+     ko  round     — full deep body, blunt head, thick tail base
+     le  colossus  — enormous, front-heavy, thick tail
    ================================================================ */
 const PROFILES = {
-  /* predator — classic torpedo, peak at 40% */
-  pr1: [0.06, 0.18, 0.28, 0.36, 0.40, 0.40, 0.36, 0.28, 0.20, 0.12, 0.05, 0.02],
-  pr2: [0.07, 0.22, 0.36, 0.48, 0.54, 0.54, 0.48, 0.38, 0.27, 0.16, 0.07, 0.02],
-  pr3: [0.08, 0.24, 0.40, 0.52, 0.60, 0.60, 0.54, 0.42, 0.30, 0.18, 0.08, 0.03],
-  pr4: [0.09, 0.26, 0.44, 0.58, 0.68, 0.68, 0.60, 0.48, 0.34, 0.20, 0.09, 0.03],
+  pr1: [0.02, 0.10, 0.20, 0.28, 0.32, 0.32, 0.30, 0.25, 0.19, 0.12, 0.06, 0.02],
+  pr2: [0.03, 0.14, 0.28, 0.42, 0.50, 0.51, 0.47, 0.39, 0.29, 0.19, 0.10, 0.03],
+  pr3: [0.03, 0.14, 0.30, 0.46, 0.55, 0.57, 0.53, 0.44, 0.32, 0.20, 0.10, 0.03],
+  pr4: [0.03, 0.15, 0.33, 0.52, 0.64, 0.68, 0.66, 0.55, 0.40, 0.25, 0.12, 0.03],
 
-  /* swift — thin, mass forward at ~27%, very lean rear */
-  sw1: [0.04, 0.12, 0.19, 0.22, 0.20, 0.17, 0.13, 0.09, 0.06, 0.03, 0.02, 0.01],
-  sw2: [0.05, 0.15, 0.23, 0.27, 0.25, 0.21, 0.16, 0.11, 0.07, 0.04, 0.02, 0.01],
-  sw3: [0.06, 0.18, 0.28, 0.33, 0.31, 0.26, 0.20, 0.14, 0.09, 0.05, 0.02, 0.01],
-  sw4: [0.07, 0.21, 0.33, 0.39, 0.37, 0.31, 0.24, 0.17, 0.11, 0.06, 0.03, 0.01],
+  sw1: [0.02, 0.09, 0.18, 0.24, 0.25, 0.23, 0.19, 0.14, 0.09, 0.05, 0.02, 0.01],
+  sw2: [0.03, 0.13, 0.25, 0.31, 0.32, 0.30, 0.25, 0.18, 0.12, 0.06, 0.02, 0.01],
+  sw3: [0.03, 0.15, 0.30, 0.38, 0.39, 0.36, 0.30, 0.22, 0.14, 0.07, 0.03, 0.01],
+  sw4: [0.04, 0.18, 0.36, 0.46, 0.47, 0.43, 0.36, 0.26, 0.17, 0.09, 0.03, 0.01],
 
-  /* armor — boxy, plateau 15–65%, blunt drop-off */
-  ar1: [0.14, 0.26, 0.32, 0.34, 0.35, 0.35, 0.34, 0.32, 0.26, 0.16, 0.07, 0.02],
-  ar2: [0.16, 0.30, 0.38, 0.42, 0.43, 0.43, 0.42, 0.39, 0.32, 0.20, 0.09, 0.03],
-  ar3: [0.18, 0.34, 0.44, 0.48, 0.50, 0.50, 0.48, 0.44, 0.36, 0.24, 0.10, 0.03],
-  ar4: [0.20, 0.38, 0.50, 0.54, 0.56, 0.56, 0.54, 0.50, 0.42, 0.28, 0.12, 0.04],
+  ar1: [0.12, 0.24, 0.32, 0.36, 0.37, 0.37, 0.34, 0.28, 0.20, 0.12, 0.05, 0.02],
+  ar2: [0.16, 0.32, 0.44, 0.50, 0.51, 0.51, 0.46, 0.38, 0.27, 0.16, 0.07, 0.02],
+  ar3: [0.19, 0.38, 0.52, 0.58, 0.60, 0.60, 0.55, 0.46, 0.33, 0.19, 0.08, 0.03],
+  ar4: [0.22, 0.44, 0.58, 0.64, 0.66, 0.66, 0.62, 0.52, 0.38, 0.22, 0.10, 0.03],
 
-  /* serpent — near-flat, gentle swell 40–60%, no real peak */
-  se1: [0.06, 0.08, 0.10, 0.11, 0.12, 0.13, 0.12, 0.11, 0.09, 0.07, 0.04, 0.02],
-  se2: [0.07, 0.10, 0.12, 0.14, 0.15, 0.16, 0.15, 0.13, 0.11, 0.08, 0.05, 0.02],
-  se3: [0.08, 0.12, 0.15, 0.17, 0.19, 0.20, 0.19, 0.16, 0.13, 0.10, 0.06, 0.03],
-  se4: [0.09, 0.14, 0.18, 0.21, 0.23, 0.24, 0.22, 0.19, 0.15, 0.11, 0.07, 0.03],
+  se1: [0.06, 0.08, 0.10, 0.12, 0.13, 0.14, 0.14, 0.13, 0.11, 0.08, 0.05, 0.02],
+  se2: [0.07, 0.10, 0.13, 0.15, 0.17, 0.18, 0.18, 0.17, 0.14, 0.11, 0.06, 0.02],
+  se3: [0.08, 0.12, 0.16, 0.19, 0.22, 0.23, 0.23, 0.21, 0.18, 0.13, 0.08, 0.03],
+  se4: [0.09, 0.14, 0.19, 0.24, 0.27, 0.28, 0.28, 0.26, 0.22, 0.16, 0.09, 0.03],
 
-  /* abyss — huge head, peak at 5–10%, long straight taper to thin tail */
-  ab1: [0.20, 0.30, 0.32, 0.29, 0.24, 0.19, 0.15, 0.11, 0.08, 0.05, 0.03, 0.01],
-  ab2: [0.26, 0.40, 0.44, 0.40, 0.33, 0.26, 0.20, 0.15, 0.11, 0.07, 0.04, 0.01],
-  ab3: [0.30, 0.46, 0.50, 0.46, 0.38, 0.30, 0.23, 0.17, 0.12, 0.08, 0.04, 0.02],
-  ab4: [0.34, 0.52, 0.58, 0.53, 0.44, 0.35, 0.27, 0.20, 0.14, 0.09, 0.05, 0.02],
+  ab1: [0.14, 0.26, 0.30, 0.29, 0.25, 0.21, 0.17, 0.13, 0.09, 0.05, 0.02, 0.01],
+  ab2: [0.20, 0.40, 0.50, 0.50, 0.44, 0.36, 0.28, 0.20, 0.13, 0.07, 0.03, 0.01],
+  ab3: [0.24, 0.48, 0.60, 0.60, 0.54, 0.45, 0.35, 0.26, 0.17, 0.10, 0.04, 0.01],
+  ab4: [0.28, 0.54, 0.68, 0.68, 0.62, 0.52, 0.42, 0.32, 0.22, 0.13, 0.06, 0.02],
 
-  /* puffer — disc, plateau 30–70%, abrupt stub tail */
-  pu1: [0.12, 0.28, 0.42, 0.52, 0.56, 0.56, 0.52, 0.42, 0.30, 0.18, 0.07, 0.02],
-  pu2: [0.14, 0.32, 0.48, 0.60, 0.64, 0.64, 0.60, 0.48, 0.34, 0.20, 0.08, 0.02],
-  pu3: [0.16, 0.36, 0.54, 0.68, 0.72, 0.72, 0.68, 0.54, 0.38, 0.22, 0.09, 0.02],
-  pu4: [0.18, 0.40, 0.60, 0.76, 0.80, 0.80, 0.76, 0.60, 0.42, 0.24, 0.10, 0.02],
+  pu1: [0.18, 0.34, 0.46, 0.52, 0.53, 0.51, 0.45, 0.37, 0.27, 0.17, 0.08, 0.03],
+  pu2: [0.22, 0.42, 0.58, 0.66, 0.68, 0.66, 0.58, 0.47, 0.34, 0.21, 0.10, 0.03],
+  pu3: [0.26, 0.50, 0.68, 0.78, 0.80, 0.78, 0.70, 0.57, 0.42, 0.26, 0.12, 0.04],
+  pu4: [0.30, 0.58, 0.78, 0.90, 0.92, 0.90, 0.80, 0.66, 0.48, 0.30, 0.14, 0.04],
 
-  /* swordfish — bill 0–15%, sudden rise, deep mid, thin whip tail */
-  sf1: [0.01, 0.02, 0.10, 0.22, 0.30, 0.32, 0.28, 0.22, 0.15, 0.09, 0.04, 0.01],
-  sf2: [0.01, 0.03, 0.14, 0.30, 0.40, 0.44, 0.38, 0.30, 0.20, 0.12, 0.05, 0.01],
-  sf3: [0.01, 0.04, 0.18, 0.38, 0.50, 0.54, 0.48, 0.38, 0.26, 0.15, 0.06, 0.02],
-  sf4: [0.02, 0.05, 0.22, 0.46, 0.60, 0.64, 0.58, 0.46, 0.32, 0.18, 0.08, 0.02],
+  sf1: [0.01, 0.02, 0.08, 0.18, 0.26, 0.28, 0.25, 0.19, 0.13, 0.07, 0.03, 0.01],
+  sf2: [0.01, 0.03, 0.11, 0.24, 0.34, 0.37, 0.33, 0.25, 0.17, 0.09, 0.04, 0.01],
+  sf3: [0.01, 0.04, 0.15, 0.30, 0.42, 0.46, 0.41, 0.31, 0.21, 0.11, 0.05, 0.01],
+  sf4: [0.02, 0.05, 0.18, 0.36, 0.50, 0.54, 0.48, 0.36, 0.24, 0.13, 0.06, 0.02],
 
-  /* piranha — blunt high nose, deep disc, steep rear drop */
-  pi1: [0.18, 0.36, 0.48, 0.54, 0.54, 0.50, 0.42, 0.32, 0.22, 0.13, 0.05, 0.01],
-  pi2: [0.20, 0.40, 0.54, 0.62, 0.62, 0.56, 0.46, 0.34, 0.23, 0.13, 0.05, 0.01],
-  pi3: [0.22, 0.44, 0.60, 0.68, 0.68, 0.60, 0.48, 0.35, 0.24, 0.13, 0.05, 0.01],
-  pi4: [0.24, 0.48, 0.66, 0.74, 0.74, 0.64, 0.50, 0.36, 0.24, 0.13, 0.05, 0.01],
+  pi1: [0.14, 0.28, 0.40, 0.48, 0.51, 0.50, 0.45, 0.36, 0.26, 0.15, 0.06, 0.02],
+  pi2: [0.16, 0.32, 0.46, 0.56, 0.60, 0.58, 0.52, 0.41, 0.29, 0.17, 0.07, 0.02],
+  pi3: [0.15, 0.32, 0.50, 0.62, 0.67, 0.65, 0.58, 0.46, 0.32, 0.19, 0.08, 0.02],
+  pi4: [0.14, 0.32, 0.52, 0.66, 0.72, 0.70, 0.62, 0.48, 0.33, 0.19, 0.08, 0.02],
 
-  /* angler — bulbous head, peak AT THE NOSE, long thin rear third */
-  an1: [0.26, 0.36, 0.34, 0.28, 0.22, 0.17, 0.13, 0.10, 0.07, 0.05, 0.03, 0.01],
-  an2: [0.32, 0.44, 0.42, 0.35, 0.27, 0.21, 0.16, 0.12, 0.09, 0.06, 0.03, 0.01],
-  an3: [0.36, 0.50, 0.48, 0.40, 0.31, 0.24, 0.18, 0.14, 0.10, 0.06, 0.03, 0.01],
-  an4: [0.40, 0.56, 0.54, 0.45, 0.35, 0.27, 0.20, 0.15, 0.11, 0.07, 0.04, 0.01],
+  an1: [0.22, 0.38, 0.42, 0.38, 0.32, 0.26, 0.20, 0.15, 0.10, 0.06, 0.03, 0.01],
+  an2: [0.26, 0.44, 0.50, 0.46, 0.38, 0.31, 0.24, 0.17, 0.12, 0.07, 0.03, 0.01],
+  an3: [0.30, 0.51, 0.58, 0.52, 0.44, 0.36, 0.28, 0.20, 0.14, 0.08, 0.03, 0.01],
+  an4: [0.34, 0.58, 0.66, 0.58, 0.48, 0.38, 0.28, 0.20, 0.13, 0.07, 0.03, 0.01],
 
-  /* manta — thin body core; the WINGS come from finSpan, not width */
-  mn1: [0.05, 0.10, 0.16, 0.20, 0.22, 0.22, 0.20, 0.16, 0.11, 0.07, 0.04, 0.02],
-  mn2: [0.06, 0.13, 0.20, 0.26, 0.28, 0.28, 0.26, 0.20, 0.14, 0.09, 0.05, 0.02],
-  mn3: [0.07, 0.16, 0.25, 0.32, 0.35, 0.35, 0.32, 0.25, 0.17, 0.11, 0.06, 0.02],
-  mn4: [0.08, 0.19, 0.30, 0.38, 0.42, 0.42, 0.38, 0.30, 0.20, 0.13, 0.07, 0.03],
+  mn1: [0.05, 0.14, 0.24, 0.33, 0.38, 0.38, 0.34, 0.27, 0.20, 0.13, 0.07, 0.03],
+  mn2: [0.06, 0.18, 0.32, 0.44, 0.51, 0.51, 0.45, 0.36, 0.27, 0.17, 0.09, 0.04],
+  mn3: [0.07, 0.22, 0.40, 0.55, 0.64, 0.64, 0.56, 0.45, 0.34, 0.22, 0.12, 0.05],
+  mn4: [0.08, 0.26, 0.48, 0.66, 0.77, 0.77, 0.67, 0.54, 0.40, 0.26, 0.14, 0.05],
 
-  /* eel — uniform thin ribbon, near-zero variation */
-  ee1: [0.05, 0.06, 0.07, 0.08, 0.08, 0.08, 0.08, 0.07, 0.07, 0.06, 0.05, 0.03],
-  ee2: [0.06, 0.07, 0.08, 0.09, 0.10, 0.10, 0.09, 0.09, 0.08, 0.07, 0.06, 0.03],
-  ee3: [0.07, 0.08, 0.10, 0.11, 0.12, 0.12, 0.11, 0.11, 0.10, 0.09, 0.07, 0.04],
-  ee4: [0.08, 0.10, 0.12, 0.13, 0.14, 0.14, 0.13, 0.13, 0.12, 0.10, 0.08, 0.04],
+  ee1: [0.06, 0.08, 0.09, 0.10, 0.10, 0.10, 0.10, 0.09, 0.08, 0.06, 0.04, 0.02],
+  ee2: [0.07, 0.09, 0.11, 0.12, 0.13, 0.13, 0.12, 0.11, 0.10, 0.08, 0.05, 0.02],
+  ee3: [0.08, 0.11, 0.13, 0.15, 0.16, 0.16, 0.15, 0.14, 0.12, 0.09, 0.06, 0.03],
+  ee4: [0.09, 0.13, 0.16, 0.18, 0.19, 0.19, 0.18, 0.16, 0.14, 0.11, 0.07, 0.03],
 
-  /* jelly — fat rounded dome 0–25%, long thin tendril rear */
-  je1: [0.20, 0.36, 0.42, 0.40, 0.30, 0.20, 0.13, 0.08, 0.05, 0.03, 0.02, 0.01],
-  je2: [0.24, 0.42, 0.50, 0.46, 0.35, 0.23, 0.15, 0.09, 0.06, 0.04, 0.02, 0.01],
-  je3: [0.28, 0.48, 0.58, 0.54, 0.40, 0.27, 0.17, 0.11, 0.07, 0.04, 0.02, 0.01],
-  je4: [0.32, 0.54, 0.66, 0.60, 0.45, 0.30, 0.19, 0.12, 0.08, 0.05, 0.03, 0.01],
+  je1: [0.20, 0.36, 0.44, 0.44, 0.39, 0.32, 0.25, 0.18, 0.12, 0.07, 0.03, 0.01],
+  je2: [0.24, 0.42, 0.52, 0.52, 0.46, 0.38, 0.29, 0.21, 0.14, 0.08, 0.04, 0.01],
+  je3: [0.28, 0.48, 0.60, 0.60, 0.53, 0.44, 0.34, 0.24, 0.16, 0.09, 0.04, 0.01],
+  je4: [0.32, 0.54, 0.68, 0.68, 0.60, 0.50, 0.38, 0.27, 0.18, 0.10, 0.05, 0.02],
 
-  /* barracuda — long, uniform, nearly straight, sharpest lean */
-  ba1: [0.04, 0.10, 0.14, 0.16, 0.16, 0.15, 0.13, 0.11, 0.09, 0.06, 0.04, 0.01],
-  ba2: [0.05, 0.12, 0.17, 0.20, 0.20, 0.19, 0.16, 0.13, 0.11, 0.08, 0.05, 0.02],
-  ba3: [0.06, 0.14, 0.21, 0.24, 0.24, 0.22, 0.19, 0.16, 0.13, 0.09, 0.05, 0.02],
-  ba4: [0.07, 0.17, 0.25, 0.28, 0.28, 0.26, 0.22, 0.18, 0.15, 0.10, 0.06, 0.02],
+  ba1: [0.05, 0.12, 0.17, 0.18, 0.17, 0.15, 0.13, 0.10, 0.08, 0.05, 0.03, 0.01],
+  ba2: [0.06, 0.15, 0.21, 0.23, 0.22, 0.19, 0.16, 0.13, 0.10, 0.07, 0.04, 0.02],
+  ba3: [0.07, 0.18, 0.26, 0.28, 0.27, 0.24, 0.20, 0.16, 0.12, 0.08, 0.04, 0.02],
+  ba4: [0.08, 0.21, 0.30, 0.33, 0.32, 0.28, 0.23, 0.19, 0.14, 0.09, 0.05, 0.02],
 
-  /* koi — smooth full oval, thick tail base, no sharp features */
-  ko1: [0.10, 0.24, 0.36, 0.44, 0.48, 0.48, 0.44, 0.38, 0.30, 0.22, 0.14, 0.06],
-  ko2: [0.12, 0.28, 0.42, 0.52, 0.56, 0.56, 0.52, 0.44, 0.36, 0.26, 0.16, 0.07],
-  ko3: [0.13, 0.30, 0.46, 0.58, 0.64, 0.64, 0.58, 0.50, 0.40, 0.30, 0.18, 0.08],
-  ko4: [0.14, 0.32, 0.50, 0.64, 0.72, 0.72, 0.64, 0.56, 0.46, 0.34, 0.20, 0.09],
+  ko1: [0.14, 0.28, 0.38, 0.44, 0.46, 0.45, 0.41, 0.34, 0.25, 0.16, 0.08, 0.03],
+  ko2: [0.16, 0.32, 0.44, 0.52, 0.55, 0.53, 0.48, 0.40, 0.30, 0.19, 0.09, 0.03],
+  ko3: [0.17, 0.35, 0.51, 0.64, 0.70, 0.68, 0.61, 0.50, 0.38, 0.24, 0.11, 0.04],
+  ko4: [0.18, 0.38, 0.58, 0.72, 0.78, 0.76, 0.68, 0.56, 0.42, 0.27, 0.13, 0.04],
 
-  /* leviathan — thick through 70%, heavy tail base, huge overall */
-  le1: [0.16, 0.32, 0.44, 0.50, 0.52, 0.52, 0.50, 0.46, 0.40, 0.30, 0.18, 0.07],
-  le2: [0.20, 0.40, 0.54, 0.62, 0.66, 0.66, 0.62, 0.56, 0.48, 0.36, 0.22, 0.09],
-  le3: [0.24, 0.46, 0.62, 0.72, 0.76, 0.76, 0.72, 0.64, 0.54, 0.40, 0.24, 0.10],
-  le4: [0.28, 0.52, 0.70, 0.82, 0.88, 0.88, 0.82, 0.74, 0.62, 0.46, 0.28, 0.11],
+  le1: [0.16, 0.32, 0.46, 0.54, 0.56, 0.54, 0.49, 0.42, 0.34, 0.24, 0.13, 0.04],
+  le2: [0.20, 0.40, 0.56, 0.66, 0.70, 0.68, 0.62, 0.53, 0.42, 0.30, 0.17, 0.06],
+  le3: [0.24, 0.48, 0.68, 0.80, 0.86, 0.84, 0.77, 0.66, 0.53, 0.38, 0.21, 0.07],
+  le4: [0.28, 0.56, 0.80, 0.94, 1.00, 0.98, 0.90, 0.78, 0.62, 0.44, 0.25, 0.08],
 };
 
 /* ================================================================
@@ -551,389 +536,312 @@ function profilePeak(key) {
      sting   — fraction of incoming damage added as bleeding on attacker
    Boolean trait flags (read as plain booleans):
      ambush, swarm, apex, lure
-
-   Visual params (per lineage and per stage overrides):
-     shape      — tail silhouette ('forked'|'fan'|'crescent'|'spike')
-     dorsal     — dorsal style ('tiny'|'spiny'|'rear'|'spike'|'crest')
-     tailMult   — tail length multiplier
-     tailWidth  — tail thickness multiplier
-     finSpan    — pectoral / wing span multiplier
-     dorsalPos  — dorsal position along the spine (0 = nose, 1 = tail)
-     waveAmp, waveFreq, finFlap, eyeScale — animation + face
    ================================================================ */
 const LINEAGES = {
 
-  /* ------------------------------------------------------------
-     PREDATOR — classic torpedo, forked tail, mid dorsal.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   predator: {
     name: 'PREDATOR',
     desc: 'Balanced · Pack hunter',
     spdMul: 1.00, defMul: 1.00, aggrMul: 1.00, visMul: 1.00, stamMul: 1.00,
     ambush: false, dash: false, swarm: true, apex: false,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.00, waveFreq: 1.00, tailMult: 1.25, tailWidth: 1.00,
-    finSpan: 1.00, finFlap: 1.00, dorsalPos: 0.38, eyeScale: 1.00,
+    waveAmp: 1.00, waveFreq: 1.00, tailMult: 1.20, tailWidth: 1.00,
+    finSpan: 1.00, finFlap: 1.00, dorsalPos: 0.35, eyeScale: 1.00,
     glowTint: [255, 255, 255], accent: '#ffffff',
     stages: [
       { profile: 'pr1', shape: 'forked',   dorsal: 'tiny',  color: '#9a9a9a', aggr: 0.40, size: 8,
-        tailMult: 1.10, tailWidth: 0.90, finSpan: 0.85, dorsalPos: 0.34 },
-      { profile: 'pr2', shape: 'forked',   dorsal: 'spiny', color: '#c0c0c0', aggr: 0.60, size: 16,
-        tailMult: 1.20, tailWidth: 1.00, finSpan: 1.00, dorsalPos: 0.36 },
+        waveAmp: 1.05, tailMult: 1.10, eyeScale: 1.05 },
+      { profile: 'pr2', shape: 'fan',      dorsal: 'spiny', color: '#c0c0c0', aggr: 0.60, size: 16,
+        waveAmp: 1.00, tailMult: 1.20, dorsalPos: 0.38 },
       { profile: 'pr3', shape: 'forked',   dorsal: 'rear',  color: '#e0e0e0', aggr: 0.80, size: 30,
-        tailMult: 1.30, tailWidth: 1.05, finSpan: 1.10, dorsalPos: 0.40 },
+        waveAmp: 0.95, tailMult: 1.25, dorsalPos: 0.40 },
       { profile: 'pr4', shape: 'crescent', dorsal: 'spike', color: '#ffffff', aggr: 0.95, size: 60,
-        tailMult: 1.40, tailWidth: 1.15, finSpan: 1.20, dorsalPos: 0.42 },
+        waveAmp: 0.90, tailMult: 1.35, dorsalPos: 0.42, finSpan: 1.15 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     SWIFT — needle-thin, mass forward, small fins, DEEPLY forked tail.
-     Fork is long AND narrow so it reads as scissors, not a fan.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   swift: {
     name: 'SWIFT',
     desc: 'Fast · Hit and run',
     spdMul: 1.28, defMul: 0.95, aggrMul: 0.70, visMul: 1.05, stamMul: 0.55,
     ambush: false, dash: 1.45, swarm: false, apex: false,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.30, waveFreq: 1.35, tailMult: 1.75, tailWidth: 0.55,
-    finSpan: 0.55, finFlap: 1.40, dorsalPos: 0.24, eyeScale: 0.95,
+    waveAmp: 1.25, waveFreq: 1.25, tailMult: 1.35, tailWidth: 0.85,
+    finSpan: 0.90, finFlap: 1.30, dorsalPos: 0.30, eyeScale: 0.95,
     glowTint: [200, 230, 255], accent: '#dff2ff',
     stages: [
-      { profile: 'sw1', shape: 'forked', dorsal: 'tiny', color: '#7fa8c8', aggr: 0.30, size: 6,
-        tailMult: 1.60, tailWidth: 0.50, finSpan: 0.45, dorsalPos: 0.22 },
-      { profile: 'sw2', shape: 'forked', dorsal: 'tiny', color: '#93c0e0', aggr: 0.50, size: 14,
-        tailMult: 1.70, tailWidth: 0.55, finSpan: 0.50, dorsalPos: 0.23 },
-      { profile: 'sw3', shape: 'forked', dorsal: 'rear', color: '#b6d8f2', aggr: 0.70, size: 28,
-        tailMult: 1.80, tailWidth: 0.55, finSpan: 0.55, dorsalPos: 0.24, waveFreq: 1.40 },
-      { profile: 'sw4', shape: 'forked', dorsal: 'rear', color: '#dff2ff', aggr: 0.85, size: 55,
-        tailMult: 1.90, tailWidth: 0.60, finSpan: 0.60, dorsalPos: 0.25, waveFreq: 1.45 },
+      { profile: 'sw1', shape: 'forked',   dorsal: 'tiny', color: '#7fa8c8', aggr: 0.30, size: 6 },
+      { profile: 'sw2', shape: 'forked',   dorsal: 'tiny', color: '#93c0e0', aggr: 0.50, size: 14 },
+      { profile: 'sw3', shape: 'crescent', dorsal: 'rear', color: '#b6d8f2', aggr: 0.70, size: 28,
+        waveFreq: 1.30, tailMult: 1.40 },
+      { profile: 'sw4', shape: 'crescent', dorsal: 'rear', color: '#dff2ff', aggr: 0.85, size: 55,
+        waveFreq: 1.35, tailMult: 1.45, finSpan: 0.95 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     ARMOR — boxy. Thick body, wide blunt fan tail, LONG thick spiky
-     dorsal that runs most of the back.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   armor: {
     name: 'ARMOR',
     desc: 'Tanky · Slow bruiser',
     spdMul: 0.82, defMul: 1.22, aggrMul: 0.90, visMul: 0.95, stamMul: 1.10,
     ambush: false, dash: false, swarm: false, apex: false,
     reflect: 0.20, sting: false, lure: false,
-    waveAmp: 0.65, waveFreq: 0.80, tailMult: 0.70, tailWidth: 1.65,
-    finSpan: 1.25, finFlap: 0.75, dorsalPos: 0.38, eyeScale: 0.85,
+    waveAmp: 0.65, waveFreq: 0.80, tailMult: 0.95, tailWidth: 1.30,
+    finSpan: 1.20, finFlap: 0.80, dorsalPos: 0.45, eyeScale: 0.85,
     glowTint: [255, 235, 200], accent: '#f6e5c8',
     stages: [
-      { profile: 'ar1', shape: 'fan',   dorsal: 'spiny', color: '#8a7f6a', aggr: 0.40, size: 8,
-        tailMult: 0.65, tailWidth: 1.50, finSpan: 1.10, dorsalPos: 0.34 },
-      { profile: 'ar2', shape: 'fan',   dorsal: 'spiny', color: '#a89a80', aggr: 0.60, size: 18,
-        tailMult: 0.70, tailWidth: 1.60, finSpan: 1.20, dorsalPos: 0.36 },
-      { profile: 'ar3', shape: 'fan',   dorsal: 'spiny', color: '#c8b898', aggr: 0.80, size: 34,
-        tailMult: 0.72, tailWidth: 1.70, finSpan: 1.30, dorsalPos: 0.38, waveAmp: 0.60 },
-      { profile: 'ar4', shape: 'fan',   dorsal: 'spike', color: '#f6e5c8', aggr: 0.95, size: 70,
-        tailMult: 0.75, tailWidth: 1.80, finSpan: 1.40, dorsalPos: 0.40, waveAmp: 0.55, eyeScale: 0.80 },
+      { profile: 'ar1', shape: 'fan',   dorsal: 'tiny',  color: '#8a7f6a', aggr: 0.40, size: 8 },
+      { profile: 'ar2', shape: 'fan',   dorsal: 'spiny', color: '#a89a80', aggr: 0.60, size: 18 },
+      { profile: 'ar3', shape: 'spike', dorsal: 'spiny', color: '#c8b898', aggr: 0.80, size: 34,
+        waveAmp: 0.60, finSpan: 1.30 },
+      { profile: 'ar4', shape: 'spike', dorsal: 'spike', color: '#f6e5c8', aggr: 0.95, size: 70,
+        waveAmp: 0.55, finSpan: 1.40, eyeScale: 0.80 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     SERPENT — long low ribbon. NO real tail (small forked), long
-     low continuous crest running the WHOLE back.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   serpent: {
     name: 'SERPENT',
     desc: 'Long · Wide vision',
     spdMul: 0.95, defMul: 1.00, aggrMul: 0.85, visMul: 1.30, stamMul: 1.00,
     ambush: true, dash: false, swarm: false, apex: false,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.20, waveFreq: 1.65, tailMult: 0.55, tailWidth: 0.45,
-    finSpan: 0.55, finFlap: 1.05, dorsalPos: 0.52, eyeScale: 0.90,
+    waveAmp: 1.15, waveFreq: 1.55, tailMult: 1.05, tailWidth: 0.75,
+    finSpan: 0.75, finFlap: 1.10, dorsalPos: 0.55, eyeScale: 0.90,
     glowTint: [210, 255, 220], accent: '#dcffe4',
     stages: [
-      { profile: 'se1', shape: 'forked',   dorsal: 'crest', color: '#6f9a78', aggr: 0.40, size: 8,
-        tailMult: 0.50, tailWidth: 0.40, finSpan: 0.50, dorsalPos: 0.50 },
-      { profile: 'se2', shape: 'forked',   dorsal: 'crest', color: '#87b490', aggr: 0.60, size: 18,
-        tailMult: 0.55, tailWidth: 0.45, finSpan: 0.55, dorsalPos: 0.52 },
-      { profile: 'se3', shape: 'crescent', dorsal: 'crest', color: '#a8d0b0', aggr: 0.75, size: 34,
-        tailMult: 0.60, tailWidth: 0.50, finSpan: 0.60, dorsalPos: 0.54, waveFreq: 1.70 },
+      { profile: 'se1', shape: 'forked',   dorsal: 'rear',  color: '#6f9a78', aggr: 0.40, size: 8 },
+      { profile: 'se2', shape: 'forked',   dorsal: 'rear',  color: '#87b490', aggr: 0.60, size: 18 },
+      { profile: 'se3', shape: 'forked',   dorsal: 'crest', color: '#a8d0b0', aggr: 0.75, size: 34,
+        waveFreq: 1.60, dorsalPos: 0.55 },
       { profile: 'se4', shape: 'crescent', dorsal: 'crest', color: '#dcffe4', aggr: 0.90, size: 65,
-        tailMult: 0.65, tailWidth: 0.55, finSpan: 0.65, dorsalPos: 0.56, waveFreq: 1.75, waveAmp: 1.25 },
+        waveFreq: 1.65, waveAmp: 1.20, dorsalPos: 0.58 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     ABYSS — front-loaded jaw-heavy. Small fan tail, spiky dorsal
-     that sits BACK on the huge head, big eyes, lure.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   abyss: {
     name: 'ABYSS',
     desc: 'Ambush · Huge jaws',
     spdMul: 0.88, defMul: 1.05, aggrMul: 1.05, visMul: 0.90, stamMul: 1.00,
     ambush: true, dash: false, swarm: false, apex: true,
     reflect: false, sting: false, lure: true,
-    waveAmp: 0.75, waveFreq: 0.95, tailMult: 0.75, tailWidth: 1.45,
-    finSpan: 1.15, finFlap: 0.85, dorsalPos: 0.45, eyeScale: 1.25,
+    waveAmp: 0.80, waveFreq: 0.95, tailMult: 1.15, tailWidth: 1.15,
+    finSpan: 1.10, finFlap: 0.90, dorsalPos: 0.50, eyeScale: 1.25,
     glowTint: [220, 180, 255], accent: '#e6c8ff',
     stages: [
-      { profile: 'ab1', shape: 'fan',      dorsal: 'tiny',  color: '#6a5a80', aggr: 0.60, size: 8,
-        tailMult: 0.70, tailWidth: 1.30, finSpan: 1.00, dorsalPos: 0.42, eyeScale: 1.30 },
+      { profile: 'ab1', shape: 'forked',   dorsal: 'tiny',  color: '#6a5a80', aggr: 0.60, size: 8,
+        eyeScale: 1.30 },
       { profile: 'ab2', shape: 'fan',      dorsal: 'spiny', color: '#8a76a8', aggr: 0.75, size: 18,
-        tailMult: 0.75, tailWidth: 1.40, finSpan: 1.10, dorsalPos: 0.44, eyeScale: 1.25 },
+        eyeScale: 1.25 },
       { profile: 'ab3', shape: 'fan',      dorsal: 'spike', color: '#b09ad0', aggr: 0.90, size: 34,
-        tailMult: 0.78, tailWidth: 1.50, finSpan: 1.15, dorsalPos: 0.46, eyeScale: 1.20, waveAmp: 0.70 },
-      { profile: 'ab4', shape: 'fan',      dorsal: 'spike', color: '#e6c8ff', aggr: 1.00, size: 70,
-        tailMult: 0.80, tailWidth: 1.55, finSpan: 1.20, dorsalPos: 0.48, eyeScale: 1.15, waveAmp: 0.68 },
+        eyeScale: 1.20, waveAmp: 0.75 },
+      { profile: 'ab4', shape: 'crescent', dorsal: 'spike', color: '#e6c8ff', aggr: 1.00, size: 70,
+        eyeScale: 1.15, waveAmp: 0.70, tailMult: 1.20 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     PUFFER — near-circular. Tiny STUB tail (spike-shape), tiny
-     fins, short spiky dorsal sitting behind the midpoint.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   puffer: {
     name: 'PUFFER',
     desc: 'Inflates · Spiny defense',
     spdMul: 0.70, defMul: 1.45, aggrMul: 0.60, visMul: 0.90, stamMul: 1.20,
     ambush: false, dash: false, swarm: false, apex: false,
     reflect: 0.35, sting: 0.25, lure: false,
-    waveAmp: 0.45, waveFreq: 1.10, tailMult: 0.25, tailWidth: 1.45,
-    finSpan: 0.45, finFlap: 1.50, dorsalPos: 0.52, eyeScale: 1.15,
+    waveAmp: 0.55, waveFreq: 1.10, tailMult: 0.70, tailWidth: 1.35,
+    finSpan: 0.85, finFlap: 1.40, dorsalPos: 0.50, eyeScale: 1.15,
     glowTint: [255, 230, 160], accent: '#ffeeb0',
     stages: [
-      { profile: 'pu1', shape: 'spike', dorsal: 'tiny',  color: '#c8a040', aggr: 0.30, size: 7,
-        tailMult: 0.22, tailWidth: 1.30, finSpan: 0.40, dorsalPos: 0.50 },
-      { profile: 'pu2', shape: 'spike', dorsal: 'spiny', color: '#d8b45a', aggr: 0.45, size: 16,
-        tailMult: 0.24, tailWidth: 1.40, finSpan: 0.42, dorsalPos: 0.52 },
+      { profile: 'pu1', shape: 'fan',   dorsal: 'tiny',  color: '#c8a040', aggr: 0.30, size: 7 },
+      { profile: 'pu2', shape: 'fan',   dorsal: 'spiny', color: '#d8b45a', aggr: 0.45, size: 16 },
       { profile: 'pu3', shape: 'spike', dorsal: 'spiny', color: '#e8cc80', aggr: 0.60, size: 30,
-        tailMult: 0.26, tailWidth: 1.50, finSpan: 0.45, dorsalPos: 0.54, waveAmp: 0.40, finFlap: 1.55 },
+        waveAmp: 0.50, finFlap: 1.50 },
       { profile: 'pu4', shape: 'spike', dorsal: 'spike', color: '#ffeeb0', aggr: 0.75, size: 58,
-        tailMult: 0.28, tailWidth: 1.60, finSpan: 0.48, dorsalPos: 0.56, waveAmp: 0.38, finFlap: 1.60, eyeScale: 1.20 },
+        waveAmp: 0.45, finFlap: 1.55, eyeScale: 1.20 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     SWORDFISH — the bill + tall crescent tail do the talking.
-     Crest dorsal sits WAY forward, near the eye-line.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   swordfish: {
     name: 'SWORDFISH',
     desc: 'Bill · Devastating dash',
     spdMul: 1.35, defMul: 0.95, aggrMul: 0.95, visMul: 1.10, stamMul: 0.65,
     ambush: false, dash: 1.55, swarm: false, apex: true,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.35, waveFreq: 1.15, tailMult: 1.85, tailWidth: 1.05,
-    finSpan: 0.90, finFlap: 1.20, dorsalPos: 0.20, eyeScale: 1.00,
+    waveAmp: 1.30, waveFreq: 1.15, tailMult: 1.45, tailWidth: 1.05,
+    finSpan: 1.05, finFlap: 1.20, dorsalPos: 0.28, eyeScale: 1.00,
     glowTint: [180, 215, 255], accent: '#b8d8f0',
     stages: [
-      { profile: 'sf1', shape: 'forked',   dorsal: 'tiny',  color: '#4a6a8a', aggr: 0.55, size: 8,
-        tailMult: 1.60, tailWidth: 0.90, finSpan: 0.80, dorsalPos: 0.18 },
-      { profile: 'sf2', shape: 'forked',   dorsal: 'spiny', color: '#5e86ac', aggr: 0.70, size: 18,
-        tailMult: 1.75, tailWidth: 1.00, finSpan: 0.85, dorsalPos: 0.19 },
+      { profile: 'sf1', shape: 'forked',   dorsal: 'tiny',  color: '#4a6a8a', aggr: 0.55, size: 8 },
+      { profile: 'sf2', shape: 'forked',   dorsal: 'spiny', color: '#5e86ac', aggr: 0.70, size: 18 },
       { profile: 'sf3', shape: 'crescent', dorsal: 'crest', color: '#82a8cc', aggr: 0.85, size: 36,
-        tailMult: 1.90, tailWidth: 1.10, finSpan: 0.90, dorsalPos: 0.20, waveAmp: 1.40 },
+        waveAmp: 1.35, tailMult: 1.50 },
       { profile: 'sf4', shape: 'crescent', dorsal: 'crest', color: '#b8d8f0', aggr: 1.00, size: 72,
-        tailMult: 2.00, tailWidth: 1.15, finSpan: 0.95, dorsalPos: 0.21, waveAmp: 1.45 },
+        waveAmp: 1.40, tailMult: 1.55, finSpan: 1.15 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     PIRANHA — short disc. Blunt round nose in the profile, deep
-     body, short forked tail, spiny dorsal running rear-half.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   piranha: {
     name: 'PIRANHA',
     desc: 'Swarm · Frenzied bites',
     spdMul: 1.10, defMul: 0.85, aggrMul: 1.15, visMul: 1.00, stamMul: 0.85,
     ambush: false, dash: false, swarm: true, apex: false,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.25, waveFreq: 1.45, tailMult: 0.95, tailWidth: 1.15,
-    finSpan: 0.85, finFlap: 1.50, dorsalPos: 0.42, eyeScale: 1.10,
+    waveAmp: 1.20, waveFreq: 1.40, tailMult: 1.00, tailWidth: 1.10,
+    finSpan: 0.95, finFlap: 1.45, dorsalPos: 0.35, eyeScale: 1.10,
     glowTint: [255, 160, 160], accent: '#e88080',
     stages: [
-      { profile: 'pi1', shape: 'forked', dorsal: 'tiny',  color: '#8a3030', aggr: 0.60, size: 5,
-        tailMult: 0.90, tailWidth: 1.00, finSpan: 0.75, dorsalPos: 0.40 },
-      { profile: 'pi2', shape: 'forked', dorsal: 'spiny', color: '#a84040', aggr: 0.75, size: 11,
-        tailMult: 0.95, tailWidth: 1.10, finSpan: 0.85, dorsalPos: 0.41 },
+      { profile: 'pi1', shape: 'forked', dorsal: 'tiny',  color: '#8a3030', aggr: 0.60, size: 5 },
+      { profile: 'pi2', shape: 'forked', dorsal: 'spiny', color: '#a84040', aggr: 0.75, size: 11 },
       { profile: 'pi3', shape: 'forked', dorsal: 'spiny', color: '#c85858', aggr: 0.90, size: 20,
-        tailMult: 1.00, tailWidth: 1.15, finSpan: 0.90, dorsalPos: 0.42, waveFreq: 1.55, finFlap: 1.55 },
-      { profile: 'pi4', shape: 'forked', dorsal: 'spiny', color: '#e88080', aggr: 1.05, size: 38,
-        tailMult: 1.05, tailWidth: 1.20, finSpan: 0.95, dorsalPos: 0.43, waveFreq: 1.60, finFlap: 1.60, eyeScale: 1.15 },
+        waveFreq: 1.45, finFlap: 1.50 },
+      { profile: 'pi4', shape: 'crescent', dorsal: 'spike', color: '#e88080', aggr: 1.05, size: 38,
+        waveFreq: 1.50, finFlap: 1.55, eyeScale: 1.15 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     ANGLER — bulbous head. Small fan tail, tall spike dorsal sits
-     mid-head, big eyes, lure.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   angler: {
     name: 'ANGLER',
     desc: 'Lure · Deep ambusher',
     spdMul: 0.85, defMul: 1.00, aggrMul: 1.10, visMul: 0.80, stamMul: 1.05,
     ambush: true, dash: false, swarm: false, apex: false,
     reflect: false, sting: false, lure: true,
-    waveAmp: 0.80, waveFreq: 0.90, tailMult: 0.80, tailWidth: 0.95,
-    finSpan: 0.90, finFlap: 0.85, dorsalPos: 0.38, eyeScale: 1.30,
+    waveAmp: 0.85, waveFreq: 0.90, tailMult: 0.90, tailWidth: 1.05,
+    finSpan: 1.00, finFlap: 0.85, dorsalPos: 0.42, eyeScale: 1.30,
     glowTint: [200, 170, 255], accent: '#9a86a8',
     stages: [
-      { profile: 'an1', shape: 'fan',   dorsal: 'tiny',  color: '#3a3040', aggr: 0.65, size: 7,
-        tailMult: 0.75, tailWidth: 0.85, finSpan: 0.80, dorsalPos: 0.36, eyeScale: 1.35 },
-      { profile: 'an2', shape: 'fan',   dorsal: 'spiny', color: '#4e4258', aggr: 0.80, size: 15,
-        tailMult: 0.80, tailWidth: 0.90, finSpan: 0.85, dorsalPos: 0.37, eyeScale: 1.30 },
-      { profile: 'an3', shape: 'fan',   dorsal: 'spike', color: '#6a5a78', aggr: 0.95, size: 30,
-        tailMult: 0.85, tailWidth: 0.95, finSpan: 0.90, dorsalPos: 0.38, eyeScale: 1.25, waveAmp: 0.75 },
-      { profile: 'an4', shape: 'fan',   dorsal: 'spike', color: '#9a86a8', aggr: 1.05, size: 62,
-        tailMult: 0.88, tailWidth: 1.00, finSpan: 0.95, dorsalPos: 0.39, eyeScale: 1.20, waveAmp: 0.72 },
+      { profile: 'an1', shape: 'fan',      dorsal: 'tiny',  color: '#3a3040', aggr: 0.65, size: 7,
+        eyeScale: 1.35 },
+      { profile: 'an2', shape: 'fan',      dorsal: 'spiny', color: '#4e4258', aggr: 0.80, size: 15,
+        eyeScale: 1.30 },
+      { profile: 'an3', shape: 'spike',    dorsal: 'spike', color: '#6a5a78', aggr: 0.95, size: 30,
+        eyeScale: 1.25, waveAmp: 0.80 },
+      { profile: 'an4', shape: 'crescent', dorsal: 'spike', color: '#9a86a8', aggr: 1.05, size: 62,
+        eyeScale: 1.20, waveAmp: 0.75, tailMult: 0.95 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     MANTA — thin core body, ENORMOUS fin span (the wings), no
-     visible tail stalk (very long thin whip tail). tiny dorsal.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   manta: {
     name: 'MANTA',
     desc: 'Glider · Wide wings',
     spdMul: 1.05, defMul: 1.10, aggrMul: 0.70, visMul: 1.15, stamMul: 1.15,
     ambush: false, dash: false, swarm: false, apex: true,
     reflect: false, sting: false, lure: false,
-    waveAmp: 0.65, waveFreq: 0.55, tailMult: 2.10, tailWidth: 0.30,
-    finSpan: 2.40, finFlap: 0.55, dorsalPos: 0.15, eyeScale: 0.95,
+    waveAmp: 0.70, waveFreq: 0.65, tailMult: 1.60, tailWidth: 0.55,
+    finSpan: 1.80, finFlap: 0.55, dorsalPos: 0.20, eyeScale: 0.95,
     glowTint: [170, 220, 240], accent: '#7cb0c8',
     stages: [
-      { profile: 'mn1', shape: 'forked',   dorsal: 'tiny', color: '#2e4a5a', aggr: 0.35, size: 10,
-        tailMult: 1.90, tailWidth: 0.25, finSpan: 2.10, dorsalPos: 0.14 },
-      { profile: 'mn2', shape: 'forked',   dorsal: 'tiny', color: '#3e6274', aggr: 0.50, size: 22,
-        tailMult: 2.00, tailWidth: 0.28, finSpan: 2.25, dorsalPos: 0.15 },
-      { profile: 'mn3', shape: 'crescent', dorsal: 'tiny', color: '#56889c', aggr: 0.60, size: 42,
-        tailMult: 2.10, tailWidth: 0.30, finSpan: 2.40, dorsalPos: 0.16, waveFreq: 0.52 },
-      { profile: 'mn4', shape: 'crescent', dorsal: 'tiny', color: '#7cb0c8', aggr: 0.75, size: 72,
-        tailMult: 2.20, tailWidth: 0.32, finSpan: 2.55, dorsalPos: 0.17, waveFreq: 0.50, waveAmp: 0.60 },
+      { profile: 'mn1', shape: 'fan',      dorsal: 'tiny',  color: '#2e4a5a', aggr: 0.35, size: 10 },
+      { profile: 'mn2', shape: 'fan',      dorsal: 'tiny',  color: '#3e6274', aggr: 0.50, size: 22 },
+      { profile: 'mn3', shape: 'crescent', dorsal: 'rear',  color: '#56889c', aggr: 0.60, size: 42,
+        finSpan: 1.90, waveFreq: 0.60 },
+      { profile: 'mn4', shape: 'crescent', dorsal: 'rear',  color: '#7cb0c8', aggr: 0.75, size: 72,
+        finSpan: 2.00, waveFreq: 0.55, waveAmp: 0.65 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     EEL — uniform ribbon. Crest runs the whole length, tiny
-     fins, no real tail, high undulation.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   eel: {
     name: 'EEL',
     desc: 'Ribbon · Electric ambush',
     spdMul: 0.90, defMul: 1.05, aggrMul: 0.90, visMul: 1.20, stamMul: 1.00,
     ambush: true, dash: false, swarm: false, apex: false,
     reflect: false, sting: 0.30, lure: false,
-    waveAmp: 1.45, waveFreq: 1.80, tailMult: 0.60, tailWidth: 0.35,
-    finSpan: 0.35, finFlap: 1.25, dorsalPos: 0.55, eyeScale: 0.85,
+    waveAmp: 1.35, waveFreq: 1.75, tailMult: 0.85, tailWidth: 0.60,
+    finSpan: 0.55, finFlap: 1.25, dorsalPos: 0.60, eyeScale: 0.85,
     glowTint: [200, 255, 190], accent: '#a0b880',
     stages: [
-      { profile: 'ee1', shape: 'forked',   dorsal: 'crest', color: '#4a5a3a', aggr: 0.45, size: 7,
-        tailMult: 0.55, tailWidth: 0.30, finSpan: 0.30, dorsalPos: 0.52 },
-      { profile: 'ee2', shape: 'forked',   dorsal: 'crest', color: '#5e7248', aggr: 0.60, size: 16,
-        tailMult: 0.58, tailWidth: 0.33, finSpan: 0.32, dorsalPos: 0.54 },
+      { profile: 'ee1', shape: 'forked',   dorsal: 'crest', color: '#4a5a3a', aggr: 0.45, size: 7 },
+      { profile: 'ee2', shape: 'forked',   dorsal: 'crest', color: '#5e7248', aggr: 0.60, size: 16 },
       { profile: 'ee3', shape: 'crescent', dorsal: 'crest', color: '#7a9260', aggr: 0.75, size: 32,
-        tailMult: 0.60, tailWidth: 0.35, finSpan: 0.35, dorsalPos: 0.56, waveFreq: 1.85, waveAmp: 1.50 },
+        waveFreq: 1.80, waveAmp: 1.40 },
       { profile: 'ee4', shape: 'crescent', dorsal: 'crest', color: '#a0b880', aggr: 0.90, size: 64,
-        tailMult: 0.65, tailWidth: 0.38, finSpan: 0.38, dorsalPos: 0.58, waveFreq: 1.90, waveAmp: 1.55, finFlap: 1.30 },
+        waveFreq: 1.85, waveAmp: 1.45, finFlap: 1.30 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     JELLY — bell-front, tendril rear. Almost no tail, almost no
-     fins, tall spike dorsal sits at the very front like a bell rim.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   jelly: {
     name: 'JELLY',
     desc: 'Drifter · Numbing sting',
     spdMul: 0.65, defMul: 1.30, aggrMul: 0.55, visMul: 1.00, stamMul: 1.30,
     ambush: false, dash: false, swarm: false, apex: false,
     reflect: false, sting: 0.50, lure: false,
-    waveAmp: 0.35, waveFreq: 1.25, tailMult: 0.35, tailWidth: 0.35,
-    finSpan: 0.25, finFlap: 1.65, dorsalPos: 0.12, eyeScale: 0.70,
+    waveAmp: 0.45, waveFreq: 1.30, tailMult: 0.55, tailWidth: 0.45,
+    finSpan: 0.40, finFlap: 1.60, dorsalPos: 0.15, eyeScale: 0.70,
     glowTint: [235, 190, 255], accent: '#f0d8f8',
     stages: [
-      { profile: 'je1', shape: 'spike', dorsal: 'tiny', color: '#b080c0', aggr: 0.25, size: 6,
-        tailMult: 0.30, tailWidth: 0.30, finSpan: 0.22, dorsalPos: 0.10 },
-      { profile: 'je2', shape: 'spike', dorsal: 'tiny', color: '#c49ad0', aggr: 0.40, size: 14,
-        tailMult: 0.32, tailWidth: 0.32, finSpan: 0.24, dorsalPos: 0.11 },
-      { profile: 'je3', shape: 'spike', dorsal: 'rear', color: '#d8b4e0', aggr: 0.55, size: 26,
-        tailMult: 0.35, tailWidth: 0.35, finSpan: 0.26, dorsalPos: 0.12, waveAmp: 0.32, waveFreq: 1.30 },
+      { profile: 'je1', shape: 'fan',   dorsal: 'tiny', color: '#b080c0', aggr: 0.25, size: 6 },
+      { profile: 'je2', shape: 'fan',   dorsal: 'tiny', color: '#c49ad0', aggr: 0.40, size: 14 },
+      { profile: 'je3', shape: 'fan',   dorsal: 'rear', color: '#d8b4e0', aggr: 0.55, size: 26,
+        waveAmp: 0.40, waveFreq: 1.35 },
       { profile: 'je4', shape: 'spike', dorsal: 'rear', color: '#f0d8f8', aggr: 0.70, size: 50,
-        tailMult: 0.38, tailWidth: 0.38, finSpan: 0.28, dorsalPos: 0.13, waveAmp: 0.30, waveFreq: 1.35, finFlap: 1.75 },
+        waveAmp: 0.38, waveFreq: 1.40, finFlap: 1.70 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     BARRACUDA — long, thin, straight. Sharp forked tail, minimal
-     dorsal (tiny/spiny), minimal fins, flat profile.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   barracuda: {
     name: 'BARRACUDA',
     desc: 'Pike · Lightning strike',
     spdMul: 1.30, defMul: 0.90, aggrMul: 1.10, visMul: 1.05, stamMul: 0.60,
     ambush: true, dash: 1.50, swarm: false, apex: true,
     reflect: false, sting: false, lure: false,
-    waveAmp: 1.10, waveFreq: 1.20, tailMult: 1.55, tailWidth: 0.70,
-    finSpan: 0.50, finFlap: 1.25, dorsalPos: 0.26, eyeScale: 1.05,
+    waveAmp: 1.15, waveFreq: 1.20, tailMult: 1.30, tailWidth: 0.80,
+    finSpan: 0.85, finFlap: 1.25, dorsalPos: 0.30, eyeScale: 1.05,
     glowTint: [200, 225, 200], accent: '#b8ccb8',
     stages: [
-      { profile: 'ba1', shape: 'forked', dorsal: 'tiny',  color: '#5a6a5a', aggr: 0.60, size: 8,
-        tailMult: 1.40, tailWidth: 0.60, finSpan: 0.42, dorsalPos: 0.24 },
-      { profile: 'ba2', shape: 'forked', dorsal: 'tiny',  color: '#728472', aggr: 0.75, size: 17,
-        tailMult: 1.50, tailWidth: 0.65, finSpan: 0.46, dorsalPos: 0.25 },
-      { profile: 'ba3', shape: 'forked', dorsal: 'spiny', color: '#90a490', aggr: 0.90, size: 34,
-        tailMult: 1.60, tailWidth: 0.70, finSpan: 0.50, dorsalPos: 0.26, waveAmp: 1.15 },
-      { profile: 'ba4', shape: 'forked', dorsal: 'spiny', color: '#b8ccb8', aggr: 1.05, size: 68,
-        tailMult: 1.70, tailWidth: 0.75, finSpan: 0.55, dorsalPos: 0.27, waveAmp: 1.20 },
+      { profile: 'ba1', shape: 'forked',   dorsal: 'tiny',  color: '#5a6a5a', aggr: 0.60, size: 8 },
+      { profile: 'ba2', shape: 'forked',   dorsal: 'spiny', color: '#728472', aggr: 0.75, size: 17 },
+      { profile: 'ba3', shape: 'crescent', dorsal: 'crest', color: '#90a490', aggr: 0.90, size: 34,
+        waveAmp: 1.20, tailMult: 1.35 },
+      { profile: 'ba4', shape: 'crescent', dorsal: 'crest', color: '#b8ccb8', aggr: 1.05, size: 68,
+        waveAmp: 1.25, tailMult: 1.40, finSpan: 0.95 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     KOI — smooth full oval. Thick rounded fan tail base, small
-     dorsal, no sharp features anywhere.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   koi: {
     name: 'KOI',
     desc: 'Enduring · Calm and hardy',
     spdMul: 0.90, defMul: 1.15, aggrMul: 0.45, visMul: 1.10, stamMul: 1.20,
     ambush: false, dash: false, swarm: true, apex: false,
     reflect: false, sting: false, lure: false,
-    waveAmp: 0.90, waveFreq: 0.90, tailMult: 1.05, tailWidth: 1.35,
-    finSpan: 1.05, finFlap: 1.00, dorsalPos: 0.42, eyeScale: 0.95,
+    waveAmp: 0.90, waveFreq: 0.90, tailMult: 1.05, tailWidth: 1.20,
+    finSpan: 1.15, finFlap: 1.00, dorsalPos: 0.40, eyeScale: 0.95,
     glowTint: [255, 210, 170], accent: '#ffd0a0',
     stages: [
-      { profile: 'ko1', shape: 'fan', color: '#d07040', dorsal: 'tiny',  aggr: 0.20, size: 8,
-        tailMult: 1.00, tailWidth: 1.20, finSpan: 0.95, dorsalPos: 0.40 },
-      { profile: 'ko2', shape: 'fan', color: '#e08850', dorsal: 'spiny', aggr: 0.35, size: 18,
-        tailMult: 1.05, tailWidth: 1.30, finSpan: 1.00, dorsalPos: 0.41 },
-      { profile: 'ko3', shape: 'fan', color: '#f0a068', dorsal: 'rear',  aggr: 0.50, size: 34,
-        tailMult: 1.10, tailWidth: 1.40, finSpan: 1.05, dorsalPos: 0.42, waveAmp: 0.85 },
-      { profile: 'ko4', shape: 'fan', color: '#ffd0a0', dorsal: 'rear',  aggr: 0.65, size: 66,
-        tailMult: 1.15, tailWidth: 1.50, finSpan: 1.15, dorsalPos: 0.43, waveAmp: 0.80 },
+      { profile: 'ko1', shape: 'fan',      dorsal: 'tiny',  color: '#d07040', aggr: 0.20, size: 8 },
+      { profile: 'ko2', shape: 'fan',      dorsal: 'spiny', color: '#e08850', aggr: 0.35, size: 18 },
+      { profile: 'ko3', shape: 'fan',      dorsal: 'rear',  color: '#f0a068', aggr: 0.50, size: 34,
+        waveAmp: 0.85, finSpan: 1.20 },
+      { profile: 'ko4', shape: 'crescent', dorsal: 'rear',  color: '#ffd0a0', aggr: 0.65, size: 66,
+        waveAmp: 0.80, finSpan: 1.30, tailMult: 1.15 },
     ],
   },
 
-  /* ------------------------------------------------------------
-     LEVIATHAN — colossal. Thick through 70%, huge crescent tail,
-     tall spike dorsal, biggest fins, heaviest tail base.
-     ------------------------------------------------------------ */
+  /* ------------------------------------------------------------ */
   leviathan: {
     name: 'LEVIATHAN',
     desc: 'Apex · Colossal terror',
     spdMul: 0.95, defMul: 1.35, aggrMul: 1.20, visMul: 1.25, stamMul: 1.40,
     ambush: true, dash: false, swarm: false, apex: true,
     reflect: 0.25, sting: false, lure: false,
-    waveAmp: 0.85, waveFreq: 0.75, tailMult: 1.65, tailWidth: 1.55,
-    finSpan: 1.55, finFlap: 0.80, dorsalPos: 0.42, eyeScale: 1.20,
+    waveAmp: 0.85, waveFreq: 0.75, tailMult: 1.40, tailWidth: 1.35,
+    finSpan: 1.35, finFlap: 0.80, dorsalPos: 0.45, eyeScale: 1.20,
     glowTint: [150, 200, 255], accent: '#7a9cb8',
     stages: [
-      { profile: 'le1', shape: 'forked',   dorsal: 'tiny',  color: '#2a3a4a', aggr: 0.70, size: 10,
-        tailMult: 1.55, tailWidth: 1.40, finSpan: 1.40, dorsalPos: 0.40 },
-      { profile: 'le2', shape: 'fan',      dorsal: 'spiny', color: '#3c5062', aggr: 0.85, size: 24,
-        tailMult: 1.60, tailWidth: 1.45, finSpan: 1.45, dorsalPos: 0.41 },
+      { profile: 'le1', shape: 'forked',   dorsal: 'tiny',  color: '#2a3a4a', aggr: 0.70, size: 10 },
+      { profile: 'le2', shape: 'fan',      dorsal: 'spiny', color: '#3c5062', aggr: 0.85, size: 24 },
       { profile: 'le3', shape: 'spike',    dorsal: 'spike', color: '#54708a', aggr: 1.00, size: 44,
-        tailMult: 1.65, tailWidth: 1.50, finSpan: 1.55, dorsalPos: 0.42, waveAmp: 0.80 },
+        waveAmp: 0.80, finSpan: 1.40 },
       { profile: 'le4', shape: 'crescent', dorsal: 'spike', color: '#7a9cb8', aggr: 1.20, size: 72,
-        tailMult: 1.75, tailWidth: 1.60, finSpan: 1.65, dorsalPos: 0.43, waveAmp: 0.75, eyeScale: 1.25 },
+        waveAmp: 0.75, finSpan: 1.50, tailMult: 1.45, eyeScale: 1.25 },
     ],
   },
 };
