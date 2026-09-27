@@ -248,5 +248,15 @@
     "coins": 2,
     "runId": "ocean-2:kSJoxgR6FbVDeyaVAAAB:14100",
     "duration_seconds": 14
+  },
+  {
+    "roomId": "ocean-17",
+    "playerId": "EO-CjS25zFgeovoXAAAR",
+    "lineage": "piranha",
+    "kills": 0,
+    "size": 8,
+    "coins": 0,
+    "runId": "ocean-17:EO-CjS25zFgeovoXAAAR:300",
+    "duration_seconds": 0
   }
 ]

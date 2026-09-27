@@ -25,7 +25,7 @@ html,body{margin:0;padding:0;background:#000;overflow:hidden;font-family:'Courie
 .screen button.primary{border-color:#ffcc44;color:#ffcc44}
 .screen button.primary:hover{background:#ffcc44;color:#000}
 #start .coinBanner{margin-top:22px;font-size:22px;letter-spacing:8px;color:#ffcc44;text-shadow:0 0 16px rgba(255,204,68,0.85)}
-#start .menuRow{display:flex;gap:16px;margin-top:36px}
+#start .menuRow{display:flex;gap:16px;margin-top:36px;flex-wrap:wrap;justify-content:center}
 #start .help{font-size:11px;opacity:0.4;letter-spacing:4px;margin-top:34px}
 #start .help b{color:#fff;opacity:0.85}
 #start .tips{margin-top:40px;font-size:11px;opacity:0.35;letter-spacing:2px;max-width:520px;line-height:1.8}
@@ -54,3 +54,87 @@ html,body{margin:0;padding:0;background:#000;overflow:hidden;font-family:'Courie
 #over .bestStats{margin-top:12px;font-size:11px;letter-spacing:2px;opacity:0.55;line-height:1.7}
 #over .buttons{display:flex;gap:14px;margin-top:22px}
 #toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;font-size:16px;letter-spacing:4px;color:#ffcc44;text-shadow:0 0 14px rgba(255,204,68,0.9);opacity:0;transition:opacity 0.2s linear}
+
+/* ============================================================
+   SELECT FISH — character-select screen
+   ============================================================ */
+#fishSelect{justify-content:flex-start;padding-top:26px}
+#fishSelect .fishSelectHead{
+  width:100%;max-width:1120px;
+  display:flex;justify-content:space-between;align-items:flex-end;
+  padding:0 8px 12px 8px;border-bottom:1px solid rgba(255,255,255,0.2);
+}
+#fishSelect .fishSelectHead h1{font-size:28px;letter-spacing:12px;margin:0}
+#fishSelect .fishSelectHead .subtitle{font-size:11px;opacity:0.5;letter-spacing:5px;margin-bottom:6px}
+
+#fishSelect .fishGrid{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:12px;
+  margin-top:18px;
+  width:100%;
+  max-width:1120px;
+  justify-content:center;
+}
+@media (max-width:900px){
+  #fishSelect .fishGrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:560px){
+  #fishSelect .fishGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+.fishStand{
+  border:1px solid rgba(255,255,255,0.35);
+  background:#080808;
+  padding:8px 8px 6px 8px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  cursor:pointer;
+  transition:border-color 0.1s linear,background 0.1s linear,box-shadow 0.1s linear;
+  user-select:none;
+}
+.fishStand:hover{border-color:#fff;background:#111}
+.fishStand.selected{
+  border-color:#ffcc44;
+  background:#1a1700;
+  box-shadow:0 0 14px rgba(255,204,68,0.55);
+}
+.fishStandCanvas{display:block;width:100%;height:auto;background:#000;image-rendering:pixelated}
+.fishStandName{
+  margin-top:6px;font-size:11px;letter-spacing:2px;color:#fff;
+  text-shadow:0 0 6px rgba(255,255,255,0.4);
+}
+.fishStand.selected .fishStandName{
+  color:#ffcc44;
+  text-shadow:0 0 8px rgba(255,204,68,0.75);
+}
+
+#fishSelect .fishSelectFoot{
+  display:flex;gap:14px;margin-top:22px;align-items:center;justify-content:center;
+  flex-wrap:wrap;
+}
+
+.fishHoverPreview{
+  position:fixed;
+  z-index:60;
+  pointer-events:none;
+  display:none;
+  border:1px solid #ffcc44;
+  background:rgba(0,0,0,0.96);
+  padding:8px;
+  box-shadow:0 0 22px rgba(255,204,68,0.45);
+  min-width:200px;
+}
+.fishHoverPreview.on{display:block}
+.fishHoverPreview canvas{
+  display:block;width:220px;height:140px;background:#000;image-rendering:pixelated;
+}
+.fishHoverPreview .fishHoverName{
+  margin-top:6px;font-size:12px;letter-spacing:3px;color:#ffcc44;
+  text-align:center;text-shadow:0 0 8px rgba(255,204,68,0.7);
+}
+.fishHoverPreview .fishHoverStage{
+  margin-top:2px;font-size:10px;letter-spacing:2px;color:#fff;
+  text-align:center;opacity:0.85;
+}

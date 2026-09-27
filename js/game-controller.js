@@ -1,6 +1,6 @@
 ﻿"use strict";
 
-const GS=Object.freeze({MENU:'MENU',SHOP:'SHOP',PLAYING:'PLAYING',ONLINE:'ONLINE',OVER:'OVER'});
+const GS=Object.freeze({MENU:'MENU',SHOP:'SHOP',SELECT:'SELECT',PLAYING:'PLAYING',ONLINE:'ONLINE',OVER:'OVER'});
 
 class Game{
   constructor(){
@@ -14,6 +14,9 @@ class Game{
     this.renderer=new Renderer(this.canvas,this.eco);
     this.last=performance.now();
     this.playerLineage='predator';
+    /* null = player hasn't locked in a lineage yet (random every run).
+       Set to a LINEAGE key by the fish-select screen. */
+    this.selectedLineage=null;
     this.running=false;
     this.online=false;
     this.state=GS.MENU;
@@ -44,6 +47,7 @@ class Game{
       activityFeed:document.getElementById('activityFeed'),
       start:document.getElementById('start'),
       shop:document.getElementById('shop'),
+      fishSelect:document.getElementById('fishSelect'),
       over:document.getElementById('over'),
       shopGrid:document.getElementById('shopGrid'),
       oTime:document.getElementById('oTime'),
@@ -59,7 +63,11 @@ class Game{
 
     this.buildShopTabs();
 
+    /* Character-select screen (self-contained controller). */
+    this.fishSelect=new FishSelectController(this);
+
     document.getElementById('onlineBtn').addEventListener('click',()=>this.startOnline());
+    document.getElementById('openFishSelect').addEventListener('click',()=>this.openFishSelect());
     document.getElementById('openShop').addEventListener('click',()=>this.openShop());
     document.getElementById('closeShop').addEventListener('click',()=>this.showStart());
     document.getElementById('restartBtn').addEventListener('click',()=>this.startOnline());
@@ -70,8 +78,11 @@ class Game{
       if(this.el.start.classList.contains('on')){
         if(k==='enter'||k===' '){e.preventDefault();this.startOnline();}
         else if(k==='s')this.openShop();
+        else if(k==='f')this.openFishSelect();
       } else if(this.el.shop.classList.contains('on')){
         if(k==='escape'||k==='s')this.showStart();
+      } else if(this.el.fishSelect.classList.contains('on')){
+        if(k==='escape'||k==='f')this.showStart();
       } else if(this.el.over.classList.contains('on')){
         if(k==='r'||k==='enter'||k===' '){e.preventDefault();this.startOnline();}
         else if(k==='s')this.openShop();
@@ -103,6 +114,7 @@ class Game{
     this.online=next===GS.ONLINE;
     this.el.start.classList.toggle('on',next===GS.MENU);
     this.el.shop.classList.toggle('on',next===GS.SHOP);
+    this.el.fishSelect.classList.toggle('on',next===GS.SELECT);
     this.el.over.classList.toggle('on',next===GS.OVER);
     this.el.banner.style.opacity='0';this.bannerTimer=0;
     if(previous===GS.ONLINE&&next!==GS.ONLINE&&this.multiplayer)this.multiplayer.leave();
@@ -129,6 +141,7 @@ class Game{
   showScreen(name){
     if(name==='start')this._setState(GS.MENU);
     else if(name==='shop')this._setState(GS.SHOP);
+    else if(name==='fishSelect')this._setState(GS.SELECT);
     else if(name==='over')this._setState(GS.OVER);
   }
 
@@ -159,18 +172,26 @@ class Game{
     this.renderShop();
   }
 
+  openFishSelect(){
+    this.showScreen('fishSelect');
+    this.refreshStartCoins();
+    /* Sync grid with any previously-locked-in lineage. */
+    if(this.fishSelect)this.fishSelect.refresh();
+  }
+
   /* ============================================================
      SINGLE-PLAYER RUN
      ------------------------------------------------------------
-     Rolls a fresh random lineage from the full LINEAGE_KEYS list
-     (all 15 keys) and starts an offline run on the local Eco.
-     Called as a fallback from startOnline() when multiplayer is
-     unavailable or the join fails.
+     If the player has locked in a lineage via the fish-select
+     screen, use it. Otherwise roll a fresh random one from the
+     full LINEAGE_KEYS list — preserving the original "surprise
+     every run" behavior for players who never open fish select.
   ============================================================ */
   startRun(){
     if(this.online&&this.multiplayer)this.multiplayer.leave();
     this.online=false;this._networkFish.clear();
-    this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
+    if(this.selectedLineage)this.playerLineage=this.selectedLineage;
+    else this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
     this._setState(GS.PLAYING);
     this.eco.reset(this.playerLineage);
     this.eco.onPlayerDeath=()=>this.gameOver();
@@ -182,10 +203,9 @@ class Game{
   /* ============================================================
      ONLINE RUN
      ------------------------------------------------------------
-     If MultiplayerClient is not available (undefined at load, or
-     already torn down), fall straight through to a local run so
-     the player is never stuck on a dead-end "UNAVAILABLE" toast.
-     Same fallback on join failure.
+     Same selectedLineage handling: use the player's locked-in
+     lineage if set, otherwise a fresh random roll. Falls through
+     to a local run if multiplayer is unavailable.
   ============================================================ */
   startOnline(){
     if(!this.multiplayer){
@@ -193,7 +213,8 @@ class Game{
       this.startRun();
       return;
     }
-    this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
+    if(this.selectedLineage)this.playerLineage=this.selectedLineage;
+    else this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
     this.showToast('CONNECTING TO OCEAN...');
     this.multiplayer.join(this.playerLineage).then(info=>{
       this.online=true;this._networkFish.clear();

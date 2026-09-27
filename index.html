@@ -36,9 +36,10 @@
   <div class="coinBanner">◆ <span id="startCoins">0</span> COINS</div>
   <div class="menuRow">
     <button class="primary" id="onlineBtn">PLAY</button>
+    <button id="openFishSelect">SELECT FISH</button>
     <button id="openShop">SHOP</button>
   </div>
-  <div class="help">PRESS <b>ENTER</b> OR <b>SPACE</b> TO PLAY · <b>S</b> FOR SHOP</div>
+  <div class="help">PRESS <b>ENTER</b> OR <b>SPACE</b> TO PLAY · <b>S</b> FOR SHOP · <b>F</b> FOR FISH</div>
   <div class="tips">
     You are the amber fish. Everything else is black &amp; white.<br>
     Eat smaller. Flee larger. Grow. Evolve. Die anyway.
@@ -57,6 +58,24 @@
   </div>
   <div class="grid" id="shopGrid"></div>
   <button class="backBtn" id="closeShop">BACK · ESC</button>
+</div>
+
+<!-- SELECT FISH -->
+<div class="screen" id="fishSelect">
+  <div class="fishSelectHead">
+    <h1>SELECT FISH</h1>
+    <div class="subtitle">CHOOSE YOUR LINEAGE</div>
+  </div>
+  <div class="fishGrid" id="fishSelectGrid"></div>
+  <div class="fishSelectFoot">
+    <button class="primary" id="fishSelectConfirm" style="display:none">PLAY AS THIS FISH</button>
+    <button class="backBtn" id="fishSelectBack">BACK · ESC</button>
+  </div>
+  <div class="fishHoverPreview" id="fishHoverPreview">
+    <canvas id="fishHoverCanvas" width="220" height="140"></canvas>
+    <div class="fishHoverName" id="fishHoverName">—</div>
+    <div class="fishHoverStage"><span id="fishHoverStage">FRY</span> · SIZE <span id="fishHoverSize">8</span></div>
+  </div>
 </div>
 
 <!-- GAME OVER -->
@@ -88,6 +107,8 @@
 <script src="js/canvas-renderer.js"></script>
 <!-- game-quit.js - confirms Esc quits and saves current run coins -->
 <script src="js/game-quit.js"></script>
+<!-- fish-select.js - character-select screen for picking lineage -->
+<script src="js/fish-select.js"></script>
 <!-- Socket.IO is served by the multiplayer server. -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="js/multiplayer-client.js"></script>
