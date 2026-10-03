@@ -7,35 +7,39 @@
 (function () {
   "use strict";
 
-  const SPAWN_WEIGHTS = {
-    koi:        14,
-    swift:      12,
-    armor:       9,
-    manta:       9,
-    serpent:     7,
-    eel:         7,
-    jelly:       8,
-    puffer:      6,
-    predator:    9,
-    piranha:     6,
-    barracuda:   5,
-    swordfish:   4,
-    angler:      4,
-    abyss:       3,
-    leviathan:   1,
-  };
+  const SPAWN_WEIGHTS = (typeof globalThis.FishRegistry !== "undefined" && typeof globalThis.FishRegistry.spawnWeights === "function")
+    ? globalThis.FishRegistry.spawnWeights()
+    : {
+        koi:        14,
+        swift:      12,
+        armor:       9,
+        manta:       9,
+        serpent:     7,
+        eel:         7,
+        jelly:       8,
+        puffer:      6,
+        predator:    9,
+        piranha:     6,
+        barracuda:   5,
+        swordfish:   4,
+        angler:      4,
+        abyss:       3,
+        leviathan:   1,
+      };
 
   const SPAWN_KEYS  = Object.keys(SPAWN_WEIGHTS);
-  const SPAWN_TOTAL = SPAWN_KEYS.reduce((s, k) => s + SPAWN_WEIGHTS[k], 0);
+  const SPAWN_TOTAL = SPAWN_KEYS.reduce((s, k) => s + (SPAWN_WEIGHTS[k] || 0), 0);
 
-  const POP_CAPS = {
-    leviathan: 2,
-    abyss:     4,
-    swordfish: 5,
-    angler:    5,
-    barracuda: 6,
-    piranha:  12,
-  };
+  const POP_CAPS = (typeof globalThis.FishRegistry !== "undefined" && typeof globalThis.FishRegistry.spawnCaps === "function")
+    ? globalThis.FishRegistry.spawnCaps()
+    : {
+        leviathan: 2,
+        abyss:     4,
+        swordfish: 5,
+        angler:    5,
+        barracuda: 6,
+        piranha:  12,
+      };
 
   class Eco {
     constructor(profile){

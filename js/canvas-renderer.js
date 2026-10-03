@@ -72,6 +72,9 @@ class Renderer{
     this._bgW = 0;
     this._bgH = 0;
 
+    /* ---------- cached fish-pattern textures ---------- */
+    this._patternCache = new Map();
+
     /* ---------- ambient drifting motes ---------- */
     this._ambient = [];
     this._seedAmbient(70);
@@ -1123,8 +1126,82 @@ class Renderer{
     }
   }
 
+  getBodyRenderer(fish){
+    const registry = typeof globalThis !== 'undefined' && globalThis.BodyRendererRegistry
+      ? globalThis.BodyRendererRegistry
+      : null;
+    if(!registry) return null;
+    const key = fish && fish.design && fish.design.body && fish.design.body.type
+      ? fish.design.body.type
+      : (fish && fish.lineage && fish.lineage.body && fish.lineage.body.type) || 'spine';
+    return registry[key] || registry.spine || null;
+  }
+
+  _getFishPattern(ctx, fish, baseColor){
+    const key = fish && fish.design && fish.design.key ? fish.design.key : (fish && fish.lineageKey ? fish.lineageKey : 'unknown');
+    if(!key) return null;
+    const look = fish && fish.design && fish.design.look ? fish.design.look : (fish && fish.lineage && fish.lineage.look ? fish.lineage.look : null);
+    const patternName = look && look.pattern ? look.pattern : 'none';
+    const cacheKey = `${key}:${patternName}:${baseColor}`;
+    if(this._patternCache.has(cacheKey)) return this._patternCache.get(cacheKey);
+
+    const patternCanvas = document.createElement('canvas');
+    patternCanvas.width = 48; patternCanvas.height = 48;
+    const g = patternCanvas.getContext('2d');
+
+    g.fillStyle = baseColor;
+    g.fillRect(0, 0, 48, 48);
+
+    if(patternName === 'rings'){
+      g.strokeStyle = 'rgba(255,255,255,0.48)';
+      g.lineWidth = 2;
+      for(let i = 2; i < 18; i += 4){
+        g.beginPath();
+        g.arc(24, 24, i * 1.2, 0, Math.PI * 2);
+        g.stroke();
+      }
+    } else if(patternName === 'stripes'){
+      g.strokeStyle = 'rgba(255,255,255,0.42)';
+      g.lineWidth = 3;
+      for(let x = -8; x < 60; x += 12){
+        g.beginPath();
+        g.moveTo(x, 0); g.lineTo(x + 24, 48); g.stroke();
+      }
+    } else if(patternName === 'spots'){
+      g.fillStyle = 'rgba(255,255,255,0.4)';
+      for(let i = 0; i < 8; i++){
+        const x = 8 + (i * 6) % 36;
+        const y = 8 + ((i * 11) % 28);
+        g.beginPath(); g.arc(x, y, 3.7, 0, Math.PI * 2); g.fill();
+      }
+    } else if(patternName === 'bands'){
+      g.fillStyle = 'rgba(255,255,255,0.14)';
+      for(let y = 0; y < 48; y += 10) g.fillRect(0, y, 48, 5);
+    }
+
+    const pattern = ctx.createPattern(patternCanvas, 'repeat');
+    this._patternCache.set(cacheKey, pattern);
+    return pattern;
+  }
+
+  drawBodyShape(ctx, fish, bodyColor, outlineStyle, m){
+    const renderer = this.getBodyRenderer(fish);
+    if(renderer && typeof renderer === 'function'){
+      renderer.call(this, ctx, fish, m, bodyColor, outlineStyle);
+      return;
+    }
+    this._bodyPath(ctx, m);
+    ctx.fillStyle = bodyColor;
+    ctx.fill();
+    if (outlineStyle) {
+      ctx.strokeStyle = outlineStyle;
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+    }
+  }
+
   /* ============================================================
-     FISH RENDER  (unchanged from v3)
+     FISH RENDER  (preserves the public drawFish API and adds a data-driven body type)
      ============================================================ */
   drawFish(ctx, fish){
     if(!fish || !fish.alive) return;
@@ -1262,12 +1339,19 @@ class Renderer{
       ctx.restore();
     }
 
-    this._bodyPath(ctx, m);
-
     if(bodyAlphaMul > 0){
       ctx.globalAlpha = alpha * bodyAlphaMul;
-      ctx.fillStyle = bodyColor;
-      ctx.fill();
+      const pattern = this._getFishPattern(ctx, fish, bodyColor);
+      if(pattern){
+        ctx.save();
+        this._bodyPath(ctx, m);
+        ctx.clip();
+        ctx.fillStyle = pattern;
+        ctx.fillRect(this._minX - 8, this._minY - 8, this._maxX - this._minX + 16, this._maxY - this._minY + 16);
+        ctx.restore();
+      } else {
+        this.drawBodyShape(ctx, fish, bodyColor, outlineStyle, m);
+      }
     }
     ctx.globalAlpha = alpha;
 

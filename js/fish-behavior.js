@@ -13,6 +13,9 @@
       this.angle=Math.random()*Math.PI*2;
       this.size=size;
       this.lineageKey=lineageKey;
+      this.design = typeof FishRegistry !== "undefined" && FishRegistry && typeof FishRegistry.get === "function"
+        ? FishRegistry.get(lineageKey)
+        : null;
       this.lineage=LINEAGES[lineageKey]||LINEAGES.predator;
       this.isPlayer=isPlayer;this.alive=true;
       this.stage=this._stageOf(size);
@@ -33,7 +36,8 @@
       this.wanderAngle=this.angle;
       this.fleeDir={x:1,y:0};
 
-      this.numSeg=lineageKey==='serpent'||lineageKey==='eel'?14:12;
+      const bodyDef = this.design && this.design.body ? this.design.body : {};
+      this.numSeg = Number(bodyDef.segments) || (lineageKey==='serpent'||lineageKey==='eel'?14:12);
       this.spineLen=size*3.4;
       this.spine=[];
       for(let i=0;i<this.numSeg;i++){

@@ -20,12 +20,14 @@ const vm   = require("node:vm");
 
 /* Load order matters:
      config first  (defines CFG / LINEAGES / utilities)
-     Fish  second  (uses CFG / LINEAGES / utilities at class definition time? no,
-                    but uses them in its constructor, so order is safe either way —
-                    keep config first anyway to be explicit)
-     Eco   third   (uses CFG / LINEAGES / LINEAGE_KEYS / Fish) */
+     fish registry next (builds a design map for every fish)
+     Fish second  (uses CFG / LINEAGES / utilities at class definition time? no,
+                   but uses them in its constructor, so order is safe either way —
+                   keep config first anyway to be explicit)
+     Eco third    (uses CFG / LINEAGES / LINEAGE_KEYS / Fish) */
 const GAME_FILES = [
   "js/game-world-config.js",
+  "js/fish/registry.js",
   "js/fish-behavior.js",
   "js/ecosystem-simulation.js"
 ];
@@ -57,6 +59,22 @@ const FORBIDDEN_GLOBALS = [
 ];
 
 function loadGameRuntime(projectRoot) {
+  const FISH_DIR = path.join(projectRoot, "js", "fish");
+  const FISH_FILES = fs.existsSync(FISH_DIR)
+    ? fs.readdirSync(FISH_DIR)
+        .filter((file) => file.endsWith(".js") && file !== "registry.js")
+        .sort()
+        .map((file) => path.posix.join("js", "fish", file))
+    : [];
+
+  const gameFiles = [
+    "js/game-world-config.js",
+    "js/fish/registry.js",
+    ...FISH_FILES,
+    "js/fish-behavior.js",
+    "js/ecosystem-simulation.js"
+  ];
+
   /* Build a sandbox. Anything not listed here is either a V8 built-in
      (Object, Array, Map, JSON, Date, Math, Promise, Error, …) or unavailable.
      We intentionally do NOT expose require / process / Buffer to game code. */
@@ -92,7 +110,7 @@ function loadGameRuntime(projectRoot) {
   });
 
   /* Evaluate each file in order. Wrap read + eval so failures name the file. */
-  for (const file of GAME_FILES) {
+  for (const file of gameFiles) {
     const abs = path.join(projectRoot, file);
 
     let source;
