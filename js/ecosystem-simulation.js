@@ -192,11 +192,13 @@
       if(this.food.length >= target) return;
 
       let x, y;
-      if(nearPlayer && this.player){
+      const humanPlayers = this.fish.filter(f => f && f.isPlayer && f.alive);
+      const anchor = (nearPlayer && humanPlayers.length) ? humanPlayers[rInt(0, humanPlayers.length - 1)] : null;
+      if(anchor){
         const a = Math.random() * TAU;
         const d = rand(CFG.FOOD_OPENING_MIN_DISTANCE, CFG.FOOD_OPENING_RADIUS);
-        x = clamp(this.player.pos.x + Math.cos(a) * d, 30, CFG.W - 30);
-        y = clamp(this.player.pos.y + Math.sin(a) * d, 30, CFG.H - 30);
+        x = clamp(anchor.pos.x + Math.cos(a) * d, 30, CFG.W - 30);
+        y = clamp(anchor.pos.y + Math.sin(a) * d, 30, CFG.H - 30);
       } else {
         x = rand(30, CFG.W - 30);
         y = rand(30, CFG.H - 30);
@@ -376,6 +378,16 @@
           this._spawnParticlesAt(this.player.pos.x, this.player.pos.y,
             CFG.PLAYER_PARTICLES_PER_BURST, 'player');
         }
+      }
+
+      if(Array.isArray(this.corpses)){
+        const livingCorpses = [];
+        for(const corpse of this.corpses){
+          if(!corpse) continue;
+          corpse.age = (corpse.age || 0) + dt;
+          if(corpse.age < (corpse.ttl || 12)) livingCorpses.push(corpse);
+        }
+        this.corpses = livingCorpses;
       }
 
       const list = this.fish;
@@ -618,14 +630,14 @@
       }
 
       const pc = prey + mid;
-
+      const humanPlayers = this.fish.filter(f => f && f.isPlayer && f.alive);
       let nearby = 0;
-      if(this.player && this.player.alive){
-        const px = this.player.pos.x, py = this.player.pos.y;
+      for(const player of humanPlayers){
+        const px = player.pos.x, py = player.pos.y;
         const r2 = CFG.START_FISH_RADIUS * CFG.START_FISH_RADIUS;
         for(let i = 0; i < list.length; i++){
           const f = list[i];
-          if(f === this.player || !f.alive) continue;
+          if(f === player || !f.alive) continue;
           const dx = f.pos.x - px, dy = f.pos.y - py;
           if(dx * dx + dy * dy < r2) nearby++;
         }

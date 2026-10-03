@@ -4,6 +4,7 @@ const TICK_MS=50;
 const ROOM_CAPACITY=20;
 const VIEW_RADIUS=2200;
 const FOOD_VIEW_RADIUS=1500;
+const INPUT_TIMEOUT_MS=300;
 
 class GameRoom{
   constructor(id,runtime,persistence){
@@ -41,6 +42,14 @@ class GameRoom{
     this.eco.gameOver=false;
   }
 
+  _clearInput(entry){
+    if(!entry||!entry.fish||!entry.fish.netInput)return;
+    entry.fish.netInput.x=0;
+    entry.fish.netInput.y=0;
+    entry.fish.netInput._dash=false;
+    entry.fish.netInput._bite=false;
+  }
+
   join(socket,lineage){
     if(this.full)return null;
     const key=this.runtime.LINEAGES[lineage]?lineage:"predator";
@@ -51,7 +60,8 @@ class GameRoom{
       getDir(){return{x:this.x,y:this.y};},dash(){return this._dash;},bite(){return this._bite;}};
     this.eco.fish.push(fish);
     if(!this.eco.player)this.eco.player=fish;
-    this.clients.set(socket.id,{socket,fish,joinedAt:this.time,lastInputSeq:-1});
+    this.clients.set(socket.id,{socket,fish,joinedAt:this.time,lastInputSeq:-1,lastInputAt:Date.now(),
+      lastSnapshotSentAt:0,lastSnapshotSeq:0});
     this._refreshSimulationPlayer();
     socket.join(this.id);
     socket.emit("room:joined",{roomId:this.id,playerId:socket.id,tickMs:TICK_MS});
@@ -60,11 +70,49 @@ class GameRoom{
     return fish;
   }
 
+  _finalizePlayer(socketId, entry, deathReason="disconnected"){
+    if(!entry||!entry.fish)return;
+    const fish=entry.fish;
+    const result={
+      roomId:this.id,
+      playerId:socketId,
+      lineage:fish.lineageKey||"predator",
+      kills:fish.kills||0,
+      size:+(fish.size||0).toFixed(1),
+      coins:fish.coinsEarned||0,
+      runId:`${this.id}:${socketId}:${Math.floor(this.time*1000)}`,
+      duration_seconds:Math.max(0,Math.floor(this.time-entry.joinedAt)),
+      deathReason:deathReason||"disconnected",
+    };
+    entry.socket.emit("player:eliminated",result);
+    this.persistence.recordRun(result);
+    this.clients.delete(socketId);
+    return result;
+  }
+
   leave(socketId){
     const entry=this.clients.get(socketId);
     if(!entry)return;
     for(const other of this.clients.values()){
       if(other.socket.id!==socketId)other.socket.emit("player:left",{playerId:socketId,playerCount:this.clients.size-1});
+    }
+    const fish=entry.fish;
+    const shouldPersist=fish && (fish.alive || !fish.deathReason);
+    if(shouldPersist){
+      const result={
+        roomId:this.id,
+        playerId:socketId,
+        lineage:fish.lineageKey||"predator",
+        kills:fish.kills||0,
+        size:+(fish.size||0).toFixed(1),
+        coins:fish.coinsEarned||0,
+        runId:`${this.id}:${socketId}:${Math.floor(this.time*1000)}`,
+        duration_seconds:Math.max(0,Math.floor(this.time-entry.joinedAt)),
+        deathReason:fish.deathReason||"disconnected",
+      };
+      this.persistence.recordRun(result);
+      fish.deathReason=fish.deathReason||"disconnected";
+      fish.alive=false;
     }
     // A disconnecting player becomes an AI fish. This avoids a disappearing
     // hole in a fight and prevents reconnect abuse.
@@ -78,6 +126,7 @@ class GameRoom{
     if(Number.isInteger(input.seq)&&input.seq<=entry.lastInputSeq)return;
     if(Number.isInteger(input.seq))entry.lastInputSeq=input.seq;
     const x=Number(input.x),y=Number(input.y);
+    entry.lastInputAt=Date.now();
     entry.fish.netInput.x=Number.isFinite(x)?Math.max(-1,Math.min(1,x)):0;
     entry.fish.netInput.y=Number.isFinite(y)?Math.max(-1,Math.min(1,y)):0;
     entry.fish.netInput._dash=!!input.dash;
@@ -85,46 +134,69 @@ class GameRoom{
   }
 
   tick(){
-    this.time+=TICK_MS/1000;
-    this.snapshotSeq++;
-    this._refreshSimulationPlayer();
-    const previous=new Map();
-    for(const fish of this.eco.fish){
-      fish._foodEvents=[];
-      previous.set(fish._netId,{x:fish.pos.x,y:fish.pos.y,kills:fish.kills,coins:fish.coinsEarned,size:fish.size,stage:fish.stage,alive:fish.alive});
-    }
-    this.eco.update(TICK_MS/1000);
-    const events=[];
-    const currentIds=new Set();
-    for(const fish of this.eco.fish){
-      currentIds.add(fish._netId);
-      const old=previous.get(fish._netId);
-      if(!old)continue;
-      if(fish.kills>old.kills){
-        const eatPos=fish._lastEatPos||fish.pos;
-        events.push({type:"eat",id:fish._netId,playerId:fish.isPlayer?fish._netId:null,
-          coins:fish.coinsEarned-old.coins,size:fish.size,x:eatPos.x,y:eatPos.y});
-        fish._lastEatPos=null;
+    try{
+      this.time+=TICK_MS/1000;
+      this.snapshotSeq++;
+      const now=Date.now();
+      for(const [playerId,entry] of this.clients){
+        if(!entry||!entry.fish||!entry.fish.netInput)continue;
+        if(now-entry.lastInputAt>INPUT_TIMEOUT_MS){
+          this._clearInput(entry);
+        }
       }
-      for(const food of fish._foodEvents||[])events.push({type:"food",id:fish._netId,x:food.x,y:food.y});
-      if(fish.stage>old.stage)events.push({type:"evolve",id:fish._netId,stage:fish.stage,x:fish.pos.x,y:fish.pos.y});
+      this._refreshSimulationPlayer();
+      const previous=new Map();
+      for(const fish of this.eco.fish){
+        fish._foodEvents=[];
+        previous.set(fish._netId,{x:fish.pos.x,y:fish.pos.y,kills:fish.kills,coins:fish.coinsEarned,size:fish.size,stage:fish.stage,alive:fish.alive});
+      }
+      this.eco.update(TICK_MS/1000);
+      const events=[];
+      const currentIds=new Set();
+      for(const fish of this.eco.fish){
+        currentIds.add(fish._netId);
+        const old=previous.get(fish._netId);
+        if(!old)continue;
+        if(fish.kills>old.kills){
+          const eatPos=fish._lastEatPos||fish.pos;
+          events.push({type:"eat",id:fish._netId,playerId:fish.isPlayer?fish._netId:null,
+            coins:fish.coinsEarned-old.coins,size:fish.size,x:eatPos.x,y:eatPos.y});
+          fish._lastEatPos=null;
+        }
+        for(const food of fish._foodEvents||[])events.push({type:"food",id:fish._netId,x:food.x,y:food.y});
+        if(fish.stage>old.stage)events.push({type:"evolve",id:fish._netId,stage:fish.stage,x:fish.pos.x,y:fish.pos.y});
+      }
+      for(const [id,old] of previous){
+        if(old.alive&&!currentIds.has(id))events.push({type:"death",id,x:old.x,y:old.y});
+      }
+      for(const [playerId,entry] of [...this.clients]){
+        if(entry.fish.alive)continue;
+        const deathReason=entry.fish.deathReason||"killed";
+        const result={roomId:this.id,playerId,lineage:entry.fish.lineageKey,kills:entry.fish.kills,
+          size:+entry.fish.size.toFixed(1),coins:entry.fish.coinsEarned,
+          runId:`${this.id}:${playerId}:${Math.floor(this.time*1000)}`,
+          duration_seconds:Math.max(0,Math.floor(this.time-entry.joinedAt)),
+          deathReason};
+        entry.socket.emit("player:eliminated",result);
+        this.persistence.recordRun(result);
+        this.clients.delete(playerId);
+      }
+      this._refreshSimulationPlayer();
+      if(this.empty){this.dispose();return;}
+      for(const fish of this.eco.fish)this._assignBotId(fish);
+      const eventWindow=events.length>0 ? Math.min(events.length,12) : 0;
+      const trimmedEvents=eventWindow ? events.slice(-eventWindow) : [];
+      for(const entry of this.clients.values()){
+        const shouldSend = trimmedEvents.length>0 || this.snapshotSeq-entry.lastSnapshotSeq >= 2 || (Date.now()-entry.lastSnapshotSentAt) >= 90;
+        if(!shouldSend)continue;
+        entry.lastSnapshotSeq=this.snapshotSeq;
+        entry.lastSnapshotSentAt=Date.now();
+        this.sendSnapshot(entry.socket,trimmedEvents);
+      }
+    }catch(error){
+      console.error(`[GameRoom.tick] ${this.id}`, error);
+      if(this.empty){this.dispose();}
     }
-    for(const [id,old] of previous){
-      if(old.alive&&!currentIds.has(id))events.push({type:"death",id,x:old.x,y:old.y});
-    }
-    for(const [playerId,entry] of this.clients){
-      if(entry.fish.alive)continue;
-      const result={roomId:this.id,playerId,lineage:entry.fish.lineageKey,kills:entry.fish.kills,
-        size:+entry.fish.size.toFixed(1),coins:entry.fish.coinsEarned,
-        runId:`${this.id}:${playerId}:${Math.floor(this.time*1000)}`,
-        duration_seconds:Math.floor(this.time)};
-      entry.socket.emit("player:eliminated",result);
-      this.persistence.recordRun(result);
-      this.clients.delete(playerId);
-    }
-    this._refreshSimulationPlayer();
-    for(const fish of this.eco.fish)this._assignBotId(fish);
-    for(const entry of this.clients.values())this.sendSnapshot(entry.socket,events);
   }
 
   sendSnapshot(socket,events=[]){
@@ -201,8 +273,18 @@ class GameRoom{
 }
 
 class RoomManager{
-  constructor(runtime,persistence){this.runtime=runtime;this.persistence=persistence;this.rooms=[];this.serial=0;}
+  constructor(runtime,persistence){this.runtime=runtime;this.persistence=persistence;this.rooms=[];this.serial=0;this.cleanupTimer=setInterval(()=>this._pruneEmptyRooms(),1000);}
+  _pruneEmptyRooms(){
+    this.rooms=this.rooms.filter(room=>{
+      if(!room || room.empty){
+        if(room){room.dispose();}
+        return false;
+      }
+      return true;
+    });
+  }
   findRoom(){
+    this._pruneEmptyRooms();
     let room=this.rooms.find(candidate=>!candidate.full);
     if(!room){room=new GameRoom(`ocean-${++this.serial}`,this.runtime,this.persistence);this.rooms.push(room);}
     return room;
@@ -219,7 +301,7 @@ class RoomManager{
     for(const room of this.rooms){
       if(!room.clients.has(socket.id))continue;
       room.leave(socket.id);
-      if(room.empty){room.dispose();this.rooms=this.rooms.filter(candidate=>candidate!==room);}
+      this._pruneEmptyRooms();
       return;
     }
   }

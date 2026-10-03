@@ -23,6 +23,7 @@
   <div>FOOD <span id="sFood">0</span></div>
   <div>TIME <span id="sTime">0</span></div>
 </div>
+<div id="onlineStatus" class="statusPill offline" aria-live="polite">STATUS · OFFLINE</div>
 <div id="activityFeed" aria-live="polite"></div>
 
 <div id="hint">WASD · ARROWS · SPACE ATTACK · HUNT SMALLER · FLEE LARGER</div>
@@ -91,6 +92,8 @@
   </div>
 </div>
 
+<!-- device-identity.js - anonymous persistent device ID (crypto.randomUUID with fallback) -->
+<script src="js/device-identity.js"></script>
 <!-- player-profile-storage.js - saved coins, skins, upgrades, and run statistics -->
 <script src="js/player-profile-storage.js"></script>
 <!-- shop-catalog.js - shop skins and upgrade definitions -->

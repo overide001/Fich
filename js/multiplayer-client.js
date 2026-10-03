@@ -42,10 +42,15 @@ class MultiplayerClient{
       socket.on("world:snapshot",snapshot=>this._onSnapshot(snapshot));
       socket.on("disconnect",()=>{
         this._connected=false;
+        if(this.game && typeof this.game.setConnectionStatus === 'function') this.game.setConnectionStatus('offline');
         if(!this._intentionalClose)this.game.showToast("CONNECTION LOST · RECONNECTING");
       });
-      socket.on("reconnect",()=>this.game.showToast("RECONNECTED"));
+      socket.on("reconnect",()=>{
+        if(this.game && typeof this.game.setConnectionStatus === 'function') this.game.setConnectionStatus('online', this.roomId || 'ROOM');
+        this.game.showToast("RECONNECTED");
+      });
       socket.on("reconnect_failed",()=>{
+        if(this.game && typeof this.game.setConnectionStatus === 'function') this.game.setConnectionStatus('offline');
         this.game.showToast("CONNECTION LOST · RETURNING TO MENU");
         this._intentionalClose=true;this.leave();
       });
@@ -70,7 +75,7 @@ class MultiplayerClient{
             latest snapshot is retained and applied once start() is invoked. ---- */
     if(this._started&&this.game.online){
       this.game.applyMultiplayerSnapshot(snapshot,this.playerId);
-    } else {
+    } else if(!this._pendingSnapshot || rawSeq===null || this._pendingSnapshot.seq===undefined || rawSeq>this._pendingSnapshot.seq){
       this._pendingSnapshot=snapshot;
     }
   }
@@ -85,7 +90,7 @@ class MultiplayerClient{
   }
 
   update(dt){
-    if(!this._connected||!this.socket)return;
+    if(!this._connected||!this.socket || !this._started)return;
     const eco=this.game.eco,player=eco.player;
     if(player&&player.alive){
       eco.playerParticleTimer-=dt;
@@ -132,6 +137,7 @@ class MultiplayerClient{
 
   leave(){
     this._intentionalClose=true;
+    if(this.game && typeof this.game.setConnectionStatus === 'function') this.game.setConnectionStatus('offline');
     if(this._joinCancel){const cancel=this._joinCancel;this._joinCancel=null;try{cancel();}catch(_){} }
     if(this.socket){try{this.socket.removeAllListeners();}catch(_){}try{this.socket.disconnect();}catch(_){} }
     this.socket=null;this._connected=false;this.playerId=null;this.roomId=null;

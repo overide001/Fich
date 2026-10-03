@@ -949,10 +949,6 @@
       if(foodTarget)add('FOOD',hunger*(0.9+(1-this.psy.hungerTolerance)*0.6)+(1-stamina)*0.18-danger*0.22,
         foodTarget,1.0);
 
-      const corpse=eco&&eco.corpses&&eco.corpses.find(c=>!c.eaten);
-      if(corpse)add('SCAVENGE',hunger*0.65+(this.psy.riskTolerance<0.5?0.25:0)
-        -danger*0.22,corpse,1.1);
-
       if(this.territory){
         const homeD=Math.hypot(this.pos.x-this.territory.x,this.pos.y-this.territory.y);
         add('RETURN',(homeD>this.territory.r?this.psy.territoriality*1.1:0.05)+danger*0.16+this.intent.territory,null,1.2);

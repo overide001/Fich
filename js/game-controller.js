@@ -45,6 +45,7 @@ class Game{
       bText:document.getElementById('bText'),
       bSub:document.getElementById('bSub'),
       toast:document.getElementById('toast'),
+      onlineStatus:document.getElementById('onlineStatus'),
       activityFeed:document.getElementById('activityFeed'),
       start:document.getElementById('start'),
       shop:document.getElementById('shop'),
@@ -61,6 +62,8 @@ class Game{
     };
     this.bannerTimer=0;this.toastTimer=0;
     this._toastQueue=[];this._activity=[];
+    this._connectingLockUntil=0;
+    this._gameOverLockUntil=0;
 
     this.buildShopTabs();
 
@@ -87,10 +90,7 @@ class Game{
       } else if(this.el.over.classList.contains('on')){
         if(k==='r'||k==='enter'||k===' '){e.preventDefault();this.startOnline();}
         else if(k==='s')this.openShop();
-      } else if(this.running){
-        /* ============================================
-           CHEAT CODE — press 8 for +2 instant kills
-        ============================================ */
+      } else if(this.running && window.__DEBUG__){
         if(k==='8'){ this.cheatKills(2); }
         if(k==='9'){ this.cheatShoal(); }
       }
@@ -105,7 +105,19 @@ class Game{
 
     this.refreshStartCoins();
     this.updateStartSubtitle();
+    this.setConnectionStatus('offline');
     requestAnimationFrame(t=>this.loop(t));
+  }
+
+  setConnectionStatus(mode, detail=''){
+    const node=this.el.onlineStatus;
+    if(!node)return;
+    const text = mode === 'online' ? `STATUS · ONLINE${detail ? ` · ${detail}` : ''}`
+      : mode === 'connecting' ? 'STATUS · CONNECTING'
+      : 'STATUS · OFFLINE';
+    node.textContent=text;
+    node.classList.remove('online','connecting','offline');
+    node.classList.add(mode === 'online' ? 'online' : mode === 'connecting' ? 'connecting' : 'offline');
   }
 
   _setState(next){
@@ -177,6 +189,7 @@ class Game{
     this.eco.pendingCoins=0;
     this.running=false;
     this.showScreen('start');
+    this.setConnectionStatus('offline');
     this.el.banner.style.opacity='0';
     this.bannerTimer=0;
     this.refreshStartCoins();
@@ -218,6 +231,7 @@ class Game{
     if(this.selectedLineage)this.playerLineage=this.selectedLineage;
     else this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
     this._setState(GS.PLAYING);
+    this.setConnectionStatus('offline');
     this.eco.reset(this.playerLineage);
     this.eco.onPlayerDeath=()=>this.gameOver();
     this.eco.onPlayerEvolve=(a,b)=>this.showEvo(b);
@@ -233,6 +247,8 @@ class Game{
      to a local run if multiplayer is unavailable.
   ============================================================ */
   startOnline(){
+    const now=Date.now();
+    if(now < this._connectingLockUntil) return;
     if(!this.multiplayer){
       console.warn('[Game] MultiplayerClient unavailable — running single-player.');
       this.startRun();
@@ -240,6 +256,10 @@ class Game{
     }
     if(this.selectedLineage)this.playerLineage=this.selectedLineage;
     else this.playerLineage=LINEAGE_KEYS[rInt(0,LINEAGE_KEYS.length-1)];
+    this._connectingLockUntil=now+1000;
+    this.setConnectionStatus('connecting');
+    const onlineBtn=document.getElementById('onlineBtn');
+    if(onlineBtn)onlineBtn.disabled=true;
     this.showToast('CONNECTING TO OCEAN...');
     this.multiplayer.join(this.playerLineage).then(info=>{
       this.online=true;this._networkFish.clear();
@@ -252,11 +272,16 @@ class Game{
       this.eco.fish.length=0;this.eco.food.length=0;this.eco.particles.length=0;
       this.eco.shockwaves.length=0;this.eco.shoals.length=0;this.eco.player=null;
       this.eco.time=0;this._setState(GS.ONLINE);
+      this.setConnectionStatus('online', info.roomId.toUpperCase());
       this.multiplayer.start();
       this.showToast(`ONLINE · ${info.roomId.toUpperCase()} · ${this.playerLineage.toUpperCase()}`);
     }).catch(error=>{
       console.error('[Game] Multiplayer join failed — falling back to single-player:', error);
+      this.setConnectionStatus('offline');
       this.startRun();
+    }).finally(()=>{
+      this._connectingLockUntil=0;
+      if(onlineBtn)onlineBtn.disabled=false;
     });
   }
 
@@ -287,6 +312,8 @@ class Game{
     this.eco.player=this._networkFish.get(playerId)||null;
     this.eco.food=Array.isArray(snapshot.food)?snapshot.food:[];
     this.eco.time=snapshot.time;
+    const localPlayer = this._networkFish.get(playerId);
+    if(localPlayer && Number.isFinite(Number(localPlayer.coinsEarned))) this.eco.pendingCoins = Number(localPlayer.coinsEarned);
     this.applyMultiplayerEvents(snapshot.events||[],playerId);
   }
 
@@ -341,11 +368,13 @@ class Game{
     if(!this.online)return;
     const p=this.eco.player;
     if(p){
-      p.kills=result.kills;p.size=result.size;p.deathReason='killed';
+      const deathReason = result && result.deathReason ? result.deathReason : 'killed';
+      p.kills=result.kills;p.size=result.size;p.deathReason=deathReason;
       p.coinsEarned=Number(result.coins)||p.coinsEarned||0;
       this.eco.pendingCoins=p.coinsEarned;
     }
     this.showToast('ELIMINATED');
+    this.setConnectionStatus('offline');
     this.gameOver();
     this.online=false;
     if(this.multiplayer)this.multiplayer.leave();
@@ -398,8 +427,17 @@ class Game{
   }
 
   gameOver(){
+    const now=Date.now();
+    if(now < this._gameOverLockUntil) return;
+    this._gameOverLockUntil = now + 1000;
+    this.setConnectionStatus('offline');
     const p=this.eco.player;
-    const earned=this.eco.pendingCoins;
+    if(!p){
+      this.showScreen('over');
+      this.running=false;
+      return;
+    }
+    const earned=Number(this.eco.pendingCoins||0);
     this.profile.addCoins(earned);
     this.profile.recordRun({
       time:Math.floor(this.eco.time),
@@ -411,7 +449,8 @@ class Game{
     this.el.oKills.textContent=p.kills;
     this.el.oStage.textContent=p.stage;
     this.el.oSize.textContent=p.size.toFixed(1);
-    this.el.oWho.textContent=p.deathReason==='starved'?'You starved.':'You were eaten.';
+    const reason = p.deathReason || 'killed';
+    this.el.oWho.textContent = reason==='starved' ? 'You starved.' : reason==='disconnected' ? 'You disconnected.' : reason==='killed' ? 'You were eaten.' : 'Run complete.';
     this.el.oCoins.textContent=earned;
     const b=this.profile.data.best;
     this.el.oBest.innerHTML=
